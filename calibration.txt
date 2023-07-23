@@ -1,0 +1,9 @@
+rot_tform_thetaR = -0.9898933673818476
+aff_tform_pt1 = [955, 614]
+aff_tform_pt2 = [936, 741]
+aff_tform_pt3 = [1133, 616]
+aff_tform_pt4 = [936, 614]
+aff_tform_pt5 = [936, 741]
+aff_tform_pt6 = [1110, 616]
+fiber1_pixels = [613, 663]
+fiber2_pixels = [688, 738]
