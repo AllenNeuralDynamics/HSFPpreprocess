@@ -1,4 +1,4 @@
 ['all']
 root = 'C:\AIND\code\HSFPpreprocess\'
-calibration_data = 'C:\AIND\output_data\BigTiffs2023-08-16T09_47_39.2912896-07_00\'
-raw_data = 'D:\BigTiffs2023-07-26T14_43_04.0635264-07_00\'
+calibration_data = 'C:\AIND\output_data\BigTiffs2023-08-29T09_57_35.8840448-07_00\'
+raw_data = 'C:\AIND\output_data\BigTiffs2023-08-10T11_50_10.0447360-07_00\'
