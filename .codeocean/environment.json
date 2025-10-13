@@ -10,16 +10,34 @@
 		"pip": {
 			"packages": [
 				{
-					"name": "matplotlib"
+					"name": "matplotlib",
+					"version": "3.9.4"
 				},
 				{
-					"name": "numpy"
+					"name": "natsort",
+					"version": "8.4.0"
 				},
 				{
-					"name": "pandas"
+					"name": "numpy",
+					"version": "2.0.2"
 				},
 				{
-					"name": "scipy"
+					"name": "pandas",
+					"version": "2.3.3"
+				},
+				{
+					"name": "pillow"
+				},
+				{
+					"name": "scikit-image"
+				},
+				{
+					"name": "scipy",
+					"version": "1.13.1"
+				},
+				{
+					"name": "toml",
+					"version": "0.10.2"
 				}
 			],
 			"options": {},
