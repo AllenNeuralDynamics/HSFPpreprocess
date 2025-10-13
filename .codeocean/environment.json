@@ -10,7 +10,7 @@
 		"pip": {
 			"packages": [
 				{
-					"name": "cv2"
+					"name": "allensdk"
 				},
 				{
 					"name": "matplotlib",
@@ -25,7 +25,8 @@
 					"version": "2.0.2"
 				},
 				{
-					"name": "opencv-python-headless"
+					"name": "opencv-python-headless",
+					"version": "4.12.0.88"
 				},
 				{
 					"name": "pandas",
@@ -40,8 +41,14 @@
 					"version": "0.24.0"
 				},
 				{
+					"name": "scikit-learn"
+				},
+				{
 					"name": "scipy",
 					"version": "1.13.1"
+				},
+				{
+					"name": "seaborn"
 				},
 				{
 					"name": "toml",
