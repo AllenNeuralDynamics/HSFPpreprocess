@@ -10,6 +10,9 @@
 		"pip": {
 			"packages": [
 				{
+					"name": "cv2"
+				},
+				{
 					"name": "matplotlib",
 					"version": "3.9.4"
 				},
@@ -22,14 +25,19 @@
 					"version": "2.0.2"
 				},
 				{
+					"name": "opencv-python-headless"
+				},
+				{
 					"name": "pandas",
 					"version": "2.3.3"
 				},
 				{
-					"name": "pillow"
+					"name": "pillow",
+					"version": "11.3.0"
 				},
 				{
-					"name": "scikit-image"
+					"name": "scikit-image",
+					"version": "0.24.0"
 				},
 				{
 					"name": "scipy",
