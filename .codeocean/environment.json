@@ -10,7 +10,8 @@
 		"pip": {
 			"packages": [
 				{
-					"name": "allensdk"
+					"name": "allensdk",
+					"version": "0.16.3"
 				},
 				{
 					"name": "matplotlib",
@@ -41,14 +42,16 @@
 					"version": "0.24.0"
 				},
 				{
-					"name": "scikit-learn"
+					"name": "scikit-learn",
+					"version": "1.6.1"
 				},
 				{
 					"name": "scipy",
 					"version": "1.13.1"
 				},
 				{
-					"name": "seaborn"
+					"name": "seaborn",
+					"version": "0.13.2"
 				},
 				{
 					"name": "toml",
