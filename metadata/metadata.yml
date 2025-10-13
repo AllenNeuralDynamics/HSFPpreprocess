@@ -1,2 +1,6 @@
 metadata_version: 1
 name: HSFP preprocess CAS
+description: Capsule for preprocessing HSFP data.
+authors:
+- name: Carrie Stine
+- name: Smrithi Sunil
