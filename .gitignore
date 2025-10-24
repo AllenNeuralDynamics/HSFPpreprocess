@@ -1,1 +1,32 @@
 /data/
+
+# Mac system files
+.DS_Store
+.DS_Store?
+._*
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+env/
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# Results files
+results/
+
+# Keep readme in data and results folders
+!data/README.md
+!results/README.md
+
+# Temporary files
+*.log
+*.tmp
+*~
