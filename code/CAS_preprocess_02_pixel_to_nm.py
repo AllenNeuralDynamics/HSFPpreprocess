@@ -83,18 +83,6 @@ def generate_lut(popt, calib_file, wavelength_range=(0.4, 0.7, 0.001)):
     pixel_value_new = calib_dict['calib_Xoffset'] + np.round(pixel_value).astype(int)
     return pd.DataFrame({'Camera_pixel': pixel_value_new, 'Wavelength_nm': (1000*wavelength).astype(int)})
 
-# def generate_lut(popt, calib_file, wavelength_range=(0.4, 0.7, 0.001)):
-#     """Generate pixel ↔ wavelength lookup table."""
-#     wavelength = np.arange(*wavelength_range)
-#     theta_D = deviation_angle(wavelength)
-#     pixel_value = linear_wave(theta_D, *popt)
-
-#     # Read calibration offsets
-#     calib = pd.read_csv(calib_file, sep=' = ', engine='python', names=['name', 'value'])
-#     calib_dict = dict(zip(calib.name, calib.value.astype(float)))
-#     pixel_value_new = calib_dict['calib_Xoffset'] + np.round(pixel_value).astype(int)
-
-#     return pd.DataFrame({'Camera_pixel': pixel_value_new, 'Wavelength_nm': (1000*wavelength).astype(int)})
 
 
 # Plotting function
