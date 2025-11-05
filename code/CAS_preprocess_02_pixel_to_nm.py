@@ -1,5 +1,6 @@
 # CAS_preprocess_02_pixel_to_nm.py
 import numpy as np
+import os
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
@@ -119,7 +120,7 @@ if __name__ == '__main__': # ensures this code only runs if the script is execut
     laser_pix = find_laser_pixels(calib_image)
 
     popt, theta_D = fit_wavelength_to_pixels(lasers, laser_pix)
-    print(f"Fit parameters: a={popt[0]:.4f}, b={popt[1]:.2f}")
+    print(f"Fit parameters: a={popt[0]:.4f}, b={popt[1]:.4f}")
 
     wavelength = np.arange(0.4, 0.7, 0.001)
     pixel_value = linear_wave(deviation_angle(wavelength), *popt)
