@@ -1,4 +1,4 @@
-# CAS_preprocess_01_calibration.py
+# CAS_preprocess_01_calibration_V2.py
 
 # TO DO: 
 # figure out best way to identify session ID for import
@@ -190,7 +190,7 @@ def save_results(img_final, theta_r, points, fiber_bounds, Xoffset, Yoffset, res
     
     
 if __name__ == '__main__':
-     print("Starting HSFP image calibration processing...")
+    print("Starting HSFP image calibration processing...")
         
     # Settings
     data_dir = '/data/'
@@ -216,11 +216,23 @@ if __name__ == '__main__':
     h_line = np.mean(img_rotated, axis=0)
     h_peaks_rot, _ = find_peaks(h_line, height=2000, distance=100)
 
+#     v_peaks_rot = np.zeros(np.size(h_peaks_rot))
+#     for i, x in enumerate(h_peaks_rot):
+#         v_line = img_rotated[:, x].copy()
+#         v_line[v_line < sat_val] = 0
+#         idx = np.nonzero(np.diff(v_line))[0]
+
+#         if len(idx) >= 2:  # Need at least 2 edges
+#             v_peaks_rot[i] = int(np.round((idx[0] + idx[-1]) / 2))
+#         else:
+#             print(f"Warning: Could not find edges for laser at x={x}")
+#     v_peaks_rot = v_peaks_rot.astype(int)
+    
     # Analyze fibers
     v_width1, h_width1 = analyze_laser(img_rotated, h_peaks_rot, use_laser=1)
     v_width2, h_width2 = analyze_laser(img_rotated, h_peaks_rot, use_laser=2)
 
-    # Define affine points
+    # Define affine points and transform image
     pt1, pt2, pt3 = [h_width1[0], v_width1[0]], [h_width1[1], v_width1[1]], [h_width2[0], v_width2[0]]
     pt4, pt5, pt6 = [h_width1[1], v_width1[0]], [h_width1[1], v_width1[1]], [h_width2[1], v_width2[0]]
 
@@ -229,6 +241,19 @@ if __name__ == '__main__':
     # Store fiber boundaries
     h_line_final = np.mean(img_final, axis=0)
     h_peaks_final, _ = find_peaks(h_line_final, height=2000, distance=100)
+    
+#     v_peaks_final = np.zeros(np.size(h_peaks_final))
+#     for i, x in enumerate(h_peaks_final):
+#         v_line = img_final[:, x].copy()
+#         v_line[v_line < SAT_VAL] = 0
+#         idx = np.nonzero(np.diff(v_line))[0]
+
+#         if len(idx) >= 2:  # Need at least 2 edges
+#             v_peaks_final[i] = int(np.round((idx[0] + idx[-1]) / 2))
+#         else:
+#             print(f"Warning: Could not find edges for laser at x={x}")
+#     v_peaks_final = v_peaks_final.astype(int)
+    
     fiber1, fiber2 = store_fiber_boundaries(img_final, h_peaks_final, use_laser=2)
     
 
@@ -250,7 +275,6 @@ if __name__ == '__main__':
     fiber2[0] = int(fiber2[0] + Yoffset)
     fiber2[1] = int(fiber2[1] + Yoffset)
     
-    #img_final = img_final.astype(int)
     results_dir = Path('/results/')
     save_results(img_final, theta_r, [pt1, pt2, pt3, pt4, pt5, pt6], [fiber1, fiber2], Xoffset, Yoffset, results_dir)
     

@@ -51,6 +51,11 @@ def find_laser_pixels(image_path, height_thresh=4000, dist_thresh=100):
     im_line = np.mean(im, axis=0)
     peaks, _ = find_peaks(im_line, height=height_thresh, distance=dist_thresh)
     
+    f,ax = plt.subplots(figsize=(6,6))
+    ax.imshow(im)
+    ax.set(title='Calibration Image', xlabel='Camera pixels')
+    ax.grid(False)
+    
     plt.figure(figsize=(6,2))
     plt.plot(im_line)
     plt.plot(peaks, im_line[peaks], 'x')
@@ -82,7 +87,8 @@ def generate_lut(popt, calib_file, wavelength_range=(0.4, 0.7, 0.001)):
             calib_dict[name] = ast.literal_eval(value)  # Safe conversion
 
     pixel_value_new = calib_dict['calib_Xoffset'] + np.round(pixel_value).astype(int)
-    return pd.DataFrame({'Camera_pixel': pixel_value_new, 'Wavelength_nm': (1000*wavelength).astype(int)})
+    lut_df = pd.DataFrame({'Camera_pixel': pixel_value_new, 'Wavelength_nm': (1000*wavelength).astype(int)})
+    return lut_df, pixel_value, theta_D
 
 
 
@@ -126,7 +132,7 @@ if __name__ == '__main__': # ensures this code only runs if the script is execut
     pixel_value = linear_wave(deviation_angle(wavelength), *popt)
     plot_calibration_results(lasers, laser_pix, wavelength, pixel_value)
 
-    lut = generate_lut(popt, calib_file)
+    lut, pixel_value_wave, theta_D_wave = generate_lut(popt, calib_file)
     print(lut.head())
     
     hdf5_file = results_dir / 'pixel_to_nm.hdf5'
