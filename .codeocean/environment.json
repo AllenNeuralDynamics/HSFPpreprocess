@@ -10,10 +10,6 @@
 		"pip": {
 			"packages": [
 				{
-					"name": "allensdk",
-					"version": "0.16.3"
-				},
-				{
 					"name": "matplotlib",
 					"version": "3.9.4"
 				},
