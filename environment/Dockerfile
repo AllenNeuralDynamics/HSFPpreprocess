@@ -1,4 +1,4 @@
-# hash:sha256:a13ef12b80fad65da9aa954dc6c6ab76c3d2c442e0a5934cdddcf6a91bbae425
+# hash:sha256:786bb3635d0188cfc9a4b0717285b0699d291c7cfc24ed168c8eb50e67bbdc44
 ARG REGISTRY_HOST
 FROM $REGISTRY_HOST/codeocean/jupyterlab:3.6.1-miniconda4.12.0-python3.9-ubuntu20.04
 
@@ -7,6 +7,7 @@ ARG GIT_ASKPASS
 COPY git-askpass /
 
 RUN pip install -U --no-cache-dir \
+    h5py==3.14.0 \
     matplotlib==3.9.4 \
     natsort==8.4.0 \
     numpy==1.25.2 \
