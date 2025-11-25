@@ -68,7 +68,7 @@ def load_and_average_tiff(tiff_dir):
     return img2d
 
 
-def find_laser_positions(img, height_thresh=2000, dist_thresh=100, sat_val=SAT_VAL):
+def find_laser_positions(img, height_thresh=2000, dist_thresh=50, sat_val=SAT_VAL):
     """Find horizontal and vertical positions of lasers in the image."""
     img_to_unskew = np.array(img)
     h_line = np.mean(img_to_unskew, axis=0)
@@ -193,10 +193,10 @@ if __name__ == '__main__':
     print("Starting HSFP image calibration processing...")
         
     # Settings
-    data_dir = '/data/'
+    data_dir = '/data/' # NEED TO CORRECT
     
     # Get session ID
-    session_id = os.listdir(data_dir)[0]
+    session_id = os.listdir(data_dir)[0] # NEED TO CORRECT
     path, calib_path = load_session_paths(data_dir, session_id)
     metadata = load_calibration_metadata(calib_path)
     tiff_dir = os.path.join(calib_path, 'Tiffs')
@@ -214,7 +214,7 @@ if __name__ == '__main__':
     
     # Calculate centers of each laser after rotation
     h_line = np.mean(img_rotated, axis=0)
-    h_peaks_rot, _ = find_peaks(h_line, height=2000, distance=100)
+    h_peaks_rot, _ = find_peaks(h_line, height=2000, distance=50)
 
 #     v_peaks_rot = np.zeros(np.size(h_peaks_rot))
 #     for i, x in enumerate(h_peaks_rot):
@@ -229,7 +229,7 @@ if __name__ == '__main__':
 #     v_peaks_rot = v_peaks_rot.astype(int)
     
     # Analyze fibers
-    v_width1, h_width1 = analyze_laser(img_rotated, h_peaks_rot, use_laser=1)
+    v_width1, h_width1 = analyze_laser(img_rotated, h_peaks_rot, use_laser=0)
     v_width2, h_width2 = analyze_laser(img_rotated, h_peaks_rot, use_laser=2)
 
     # Define affine points and transform image
@@ -240,7 +240,7 @@ if __name__ == '__main__':
 
     # Store fiber boundaries
     h_line_final = np.mean(img_final, axis=0)
-    h_peaks_final, _ = find_peaks(h_line_final, height=2000, distance=100)
+    h_peaks_final, _ = find_peaks(h_line_final, height=2000, distance=50)
     
 #     v_peaks_final = np.zeros(np.size(h_peaks_final))
 #     for i, x in enumerate(h_peaks_final):
@@ -275,7 +275,7 @@ if __name__ == '__main__':
     fiber2[0] = int(fiber2[0] + Yoffset)
     fiber2[1] = int(fiber2[1] + Yoffset)
     
-    results_dir = Path('/results/')
+    results_dir = Path('/results/') # NEED TO CORRECT
     save_results(img_final, theta_r, [pt1, pt2, pt3, pt4, pt5, pt6], [fiber1, fiber2], Xoffset, Yoffset, results_dir)
     
     print("Calibration processing complete.")
