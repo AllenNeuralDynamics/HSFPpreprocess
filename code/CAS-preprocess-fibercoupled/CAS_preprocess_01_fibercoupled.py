@@ -20,8 +20,8 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # constants
-SAT_VAL = 12000 # saturation value of camera
-FIBER_WIDTH = 60 # width of fiber (in pixels)
+SAT_VAL = 7000 # saturation value of camera
+FIBER_WIDTH = 40 # width of fiber (in pixels)
 
 def load_session_paths(data_dir, session_id):
     """Create paths to session data and calibration files."""
