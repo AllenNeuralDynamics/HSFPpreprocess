@@ -22,11 +22,11 @@ import CAS_preprocess_01_fibercoupled as unskew_image
 warnings.filterwarnings("ignore")
 
 #%% variables
-SAT_VAL = 12000 # saturation value of camera
+SAT_VAL = 7000 # saturation value of camera
 FIBER_WIDTH = 40 # width of fiber (in pixels)
 
 # store the session id
-session_id = "815738_2025-11-25T11_19_02.6493184-08_00"
+session_id = "815736_2025-11-25T11_52_01.2953088-08_00"
 
 #%% main
 print("Starting HSFP image calibration processing...")

@@ -25,7 +25,7 @@ SAT_VAL = 7000 # saturation value of camera
 FIBER_WIDTH = 40 # width of fiber (in pixels)
 
 # store the session id
-session_id = "815738_2025-11-25T11_19_02.6493184-08_00"
+session_id = "815736_2025-11-25T11_52_01.2953088-08_00"
 
 #%% Load calibration filenames and metadata
 
@@ -512,7 +512,7 @@ results_dir.mkdir(parents=True, exist_ok=True)  # ensure folder exists
 output_file = results_dir / "CalibrationImage.tiff"
 cv.imwrite(str(output_file), img_final)
 
-with open(results_dir / 'calibration_new.txt','w') as f:
+with open(results_dir / 'calibration_Smrithi.txt','w') as f:
     f.write(f'rot_tform_thetaR = {theta_r}\n')
     f.write(f'aff_tform_pt1 = {pt1}\n')
     f.write(f'aff_tform_pt2 = {pt2}\n')

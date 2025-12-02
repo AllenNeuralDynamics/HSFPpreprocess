@@ -14,13 +14,14 @@ import h5py
 import ast
 
 # Lasers used for calibration
-lasers = np.array([0.561, 0.514, 0.473, 0.448, 0.405])
+lasers = np.array([0.594, 0.514, 0.488, 0.445, 0.405])
 
 # Physical constants
 SELLMEIER_COEFFS = (1.73759695, 0.313747356, 1.89878101)
 SELLMEIER_TERMS = (0.013188707, 0.0623068142, 155.23629)
 THETA_I = 60.8  # angle of incidence (degrees)
 ALPHA = 60      # prism apex angle (degrees)
+SAT_VAL = 7000  # value of laser saturation
 
 
 # Refractive index + angle of deviation helper functions
@@ -44,7 +45,7 @@ def linear_wave(x, a, b):
 
 
 # Calibration image helper function
-def find_laser_pixels(image_path, height_thresh=4000, dist_thresh=100):
+def find_laser_pixels(image_path, height_thresh=2000, dist_thresh=50):
     """Find x-pixel positions of laser peaks in calibration image."""
     I = Image.open(image_path)
     im = np.array(I)
@@ -52,7 +53,7 @@ def find_laser_pixels(image_path, height_thresh=4000, dist_thresh=100):
     peaks, _ = find_peaks(im_line, height=height_thresh, distance=dist_thresh)
     
     f,ax = plt.subplots(figsize=(6,6))
-    ax.imshow(im)
+    ax.imshow(im, vmin=0, vmax=SAT_VAL)
     ax.set(title='Calibration Image', xlabel='Camera pixels')
     ax.grid(False)
     
@@ -105,20 +106,29 @@ def plot_calibration_results(lasers, laser_pix, wavelength, pixel_value):
     
     
     
-    
+#%% Main    
 # Main execution block
 if __name__ == '__main__': # ensures this code only runs if the script is executed directly, and not when imported as a module
-    parser = argparse.ArgumentParser(
-        description="Calibrate prism dispersion and generate wavelength-to-pixel LUT"
-    )
-    parser.add_argument(
-        "--results_dir",
-        type=str,
-        default="/results/",
-        help="Directory containing the calibration image and calibration.txt file",
-    )
-    args = parser.parse_args()
-    results_dir = Path(args.results_dir)
+    # parser = argparse.ArgumentParser(
+    #     description="Calibrate prism dispersion and generate wavelength-to-pixel LUT"
+    # )
+    # parser.add_argument(
+    #     "--results_dir",
+    #     type=str,
+    #     default="/results/",
+    #     help="Directory containing the calibration image and calibration.txt file",
+    # )
+    # args = parser.parse_args()
+    # results_dir = Path(args.results_dir)
+    
+    # Define session_id
+    session_id = "815738_2025-11-25T11_19_02.6493184-08_00" # NEED TO CORRECT FOR CODE OCEAN
+    
+    # Settings
+    data_dir = r"C:\output_data\\" # NEED TO CORRECT FOR CODE OCEAN
+    path = os.path.join(data_dir, session_id)
+    results_path = os.path.join(path, 'fib') # NEED TO CORRECT FOR CODE OCEAN
+    results_dir = Path(results_path)
                  
     calib_image = results_dir / 'CalibrationImage.tiff'
     calib_file = results_dir / 'calibration.txt'

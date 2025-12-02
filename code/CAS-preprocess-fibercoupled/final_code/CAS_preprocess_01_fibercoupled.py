@@ -1,4 +1,4 @@
-# CAS_preprocess_01_calibration_V2.py
+# CAS_preprocess_01_fibercoupled.py
 
 # TO DO: 
 # figure out best way to identify session ID for import
@@ -187,16 +187,16 @@ def save_results(img_final, theta_r, points, fiber_bounds, Xoffset, Yoffset, res
     print(f"  - CalibrationImage.tiff")
     print(f"  - calibration.txt")
 
-    
+#%% Main    
     
 if __name__ == '__main__':
     print("Starting HSFP image calibration processing...")
         
     # Settings
-    data_dir = '/data/' # NEED TO CORRECT
+    data_dir = r"C:\output_data\\" # NEED TO CORRECT FOR CODE OCEAN
     
     # Get session ID
-    session_id = os.listdir(data_dir)[0] # NEED TO CORRECT
+    session_id = "821222_2025-11-25T12_04_17.4139776-08_00" # NEED TO CORRECT FOR CODE OCEAN
     path, calib_path = load_session_paths(data_dir, session_id)
     metadata = load_calibration_metadata(calib_path)
     tiff_dir = os.path.join(calib_path, 'Tiffs')
@@ -275,7 +275,8 @@ if __name__ == '__main__':
     fiber2[0] = int(fiber2[0] + Yoffset)
     fiber2[1] = int(fiber2[1] + Yoffset)
     
-    results_dir = Path('/results/') # NEED TO CORRECT
+    results_path = os.path.join(path, 'fib') # NEED TO CORRECT FOR CODE OCEAN
+    results_dir = Path(results_path)
     save_results(img_final, theta_r, [pt1, pt2, pt3, pt4, pt5, pt6], [fiber1, fiber2], Xoffset, Yoffset, results_dir)
     
     print("Calibration processing complete.")
