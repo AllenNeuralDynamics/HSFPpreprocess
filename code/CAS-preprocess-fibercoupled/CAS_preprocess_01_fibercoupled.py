@@ -22,6 +22,10 @@ warnings.filterwarnings("ignore")
 # constants
 SAT_VAL = 7000 # saturation value of camera
 FIBER_WIDTH = 40 # width of fiber (in pixels)
+USE_LASER_1 = 0 # first laser used for calculating affine transformation 
+USE_LASER_2 = 2 # second laser used for calculating affine transformation
+
+session_id = "836732_2025-12-03T10_23_42.2755328-08_00" # NEED TO CORRECT FOR CODE OCEAN
 
 def load_session_paths(data_dir, session_id):
     """Create paths to session data and calibration files."""
@@ -58,13 +62,23 @@ def load_and_average_tiff(tiff_dir):
     image_sequence = []
     while True:
         try:
-            image_sequence.append(np.array(tiff))
+            try:
+                tiff.load()
+                frame = tiff.copy()
+                arr = np.array(frame)
+                image_sequence.append(arr)
+            except Exception as e:
+                print(f"Skipping frame {tiff.tell()} due to error: {e}")
             tiff.seek(tiff.tell() + 1)
         except EOFError:
             break
 
+    if not image_sequence:
+        raise RuntimeError("No valid frames could be loaded")
+
     img = np.array(image_sequence)
     img2d = img.mean(axis=0)
+    tiff.close() # close the open tiff file
     return img2d
 
 
@@ -190,22 +204,31 @@ def save_results(img_final, theta_r, points, fiber_bounds, Xoffset, Yoffset, res
 #%% Main    
     
 if __name__ == '__main__':
-    print("Starting HSFP image calibration processing...")
+    print("Starting HSFP image calibration processing step 1...")
         
     # Settings
     data_dir = r"C:\output_data\\" # NEED TO CORRECT FOR CODE OCEAN
     
     # Get session ID
-    session_id = "821222_2025-11-25T12_04_17.4139776-08_00" # NEED TO CORRECT FOR CODE OCEAN
+   
     path, calib_path = load_session_paths(data_dir, session_id)
     metadata = load_calibration_metadata(calib_path)
     tiff_dir = os.path.join(calib_path, 'Tiffs')
     img2d = load_and_average_tiff(tiff_dir)
 
     # Camera offsets
-    Xoffset = int(metadata.XOffset[0])
-    Yoffset = int(metadata.YOffset[0])
+    if hasattr(metadata, "XOffset"):
+        Xoffset = int(metadata.XOffset[0])
+    else:
+        Xoffset = int(metadata.Left[0])
 
+    # Use 'YOffset' if available, otherwise fall back to 'Top'
+    if hasattr(metadata, "YOffset"):
+        Yoffset = int(metadata.YOffset[0])
+    else:
+        Yoffset = int(metadata.Top[0])
+        
+        
     # Find laser positions
     h_peaks, v_peaks, img_to_unskew = find_laser_positions(img2d)
     
@@ -229,8 +252,8 @@ if __name__ == '__main__':
 #     v_peaks_rot = v_peaks_rot.astype(int)
     
     # Analyze fibers
-    v_width1, h_width1 = analyze_laser(img_rotated, h_peaks_rot, use_laser=0)
-    v_width2, h_width2 = analyze_laser(img_rotated, h_peaks_rot, use_laser=2)
+    v_width1, h_width1 = analyze_laser(img_rotated, h_peaks_rot, use_laser=USE_LASER_1)
+    v_width2, h_width2 = analyze_laser(img_rotated, h_peaks_rot, use_laser=USE_LASER_2)
 
     # Define affine points and transform image
     pt1, pt2, pt3 = [h_width1[0], v_width1[0]], [h_width1[1], v_width1[1]], [h_width2[0], v_width2[0]]
@@ -254,7 +277,7 @@ if __name__ == '__main__':
 #             print(f"Warning: Could not find edges for laser at x={x}")
 #     v_peaks_final = v_peaks_final.astype(int)
     
-    fiber1, fiber2 = store_fiber_boundaries(img_final, h_peaks_final, use_laser=2)
+    fiber1, fiber2 = store_fiber_boundaries(img_final, h_peaks_final, use_laser=USE_LASER_2)
     
 
     # Save results
@@ -279,4 +302,4 @@ if __name__ == '__main__':
     results_dir = Path(results_path)
     save_results(img_final, theta_r, [pt1, pt2, pt3, pt4, pt5, pt6], [fiber1, fiber2], Xoffset, Yoffset, results_dir)
     
-    print("Calibration processing complete.")
+    print("Calibration processing step 1 complete.")

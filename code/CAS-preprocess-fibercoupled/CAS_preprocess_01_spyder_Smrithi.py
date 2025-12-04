@@ -25,7 +25,7 @@ SAT_VAL = 7000 # saturation value of camera
 FIBER_WIDTH = 40 # width of fiber (in pixels)
 
 # store the session id
-session_id = "815736_2025-11-25T11_52_01.2953088-08_00"
+session_id = "836732_2025-12-03T10_23_42.2755328-08_00"
 
 #%% Load calibration filenames and metadata
 
@@ -78,19 +78,37 @@ print(tiff_file_path)
 tiff = Image.open(tiff_file_path)
 image_sequence = []
 
-# Extract all frames from the first multi-frame tiff into an image_sequence list of numpy arrays (each represents one frame/image)
+# # Extract all frames from the first multi-frame tiff into an image_sequence list of numpy arrays (each represents one frame/image)
+# while True:
+#     try:
+#         image_sequence.append(np.array(tiff))
+#         tiff.seek(tiff.tell() + 1)
+#     except EOFError:
+#         break  
+    
 while True:
     try:
-        image_sequence.append(np.array(tiff))
+        try:
+            tiff.load()
+            frame = tiff.copy()
+            arr = np.array(frame)
+            image_sequence.append(arr)
+        except Exception as e:
+            print(f"Skipping frame {tiff.tell()} due to error: {e}")
         tiff.seek(tiff.tell() + 1)
     except EOFError:
         break
+
+if not image_sequence:
+    raise RuntimeError("No valid frames could be loaded")
+
 print('\nnumber of images in tiff: ')
 len(image_sequence)
 
 #%% Average all frames together
 img = np.array(image_sequence) # convert the list of frames into a 3D numpy array (num_frames, height, width)
 img2d = img.mean(axis=0) # average across all frames (axis=0) to create a single 2D image
+tiff.close() # close the open tiff file
 print('averaged image dimensions (height, width):')
 print(img2d.shape) # display the dimensions of the averaged image (height, width)
 
@@ -99,7 +117,10 @@ width = metadata.Width[0] # camera pixels in x direction
 print('\n# of pixels in x direction (width):')
 print(width)
 
-Xoffset = metadata.XOffset[0] # start of camera pixels in x direction
+if hasattr(metadata, "XOffset"):
+    Xoffset = metadata.XOffset[0] # start of camera pixels in x direction
+else:
+    Xoffset = metadata.Left[0]
 print('\nstarting position of pixels in x direction:')
 print(Xoffset)
 
@@ -107,7 +128,10 @@ height = metadata.Height[0] # camera pixels in y direction
 print('\n# of pixels in y direction (height):')
 print(height)
 
-Yoffset = metadata.YOffset[0] # start of camera pixels in y direction
+if hasattr(metadata, "YOffset"):
+    Yoffset = metadata.YOffset[0] # start of camera pixels in y direction
+else:
+    Yoffset = metadata.Top[0]
 print('\nstarting position of pixels in y direction:')
 print(Yoffset)
 
@@ -509,7 +533,7 @@ results_path = os.path.join(path, 'fib')
 results_dir = Path(results_path)
 results_dir.mkdir(parents=True, exist_ok=True)  # ensure folder exists
 
-output_file = results_dir / "CalibrationImage.tiff"
+output_file = results_dir / "CalibrationImage_Smrithi.tiff"
 cv.imwrite(str(output_file), img_final)
 
 with open(results_dir / 'calibration_Smrithi.txt','w') as f:

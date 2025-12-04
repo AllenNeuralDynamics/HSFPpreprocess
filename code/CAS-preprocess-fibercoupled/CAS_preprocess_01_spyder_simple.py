@@ -4,7 +4,28 @@ Created on Wed Nov 26 11:29:03 2025
 
 @author: svc_aind_behavior
 """
-#%% Setup/imports
+
+#%% DESCRIPTION
+# Use this notebook to execute the equivalent .py script while developing in 
+# the cloud.
+
+# This pre processing step first rotates the full frame to flatten the spectrum
+# using rotations transformation.
+# Following rotation, the image is affine transformed to straighten the skew in 
+# the slit due to the prism.
+# Acquire a calibration sequence after any modifications to the system or at
+# the start of every month if no modifications are made.
+    # Turn on all lasers and acquire a short sequence at full frame.
+    
+# Inputs:
+    # Calibration sequence (folder in data/session_id/fib/ called CalibrationFiles) containing:
+        # session_params.csv: csv containing camera parameters for width, height, Xoffset, and Yoffset
+        # Tiffs: a subfolder with tiffs named Tiffs0.tif, Tiffs1.tif, Tiffs2.tif, etc
+# Outputs:
+    # CalibrationImage.tiff: a .tiff file with the final calibrated image.
+    # calibration.txt: a .txt file with the transformation points.
+
+#%% setup/imports
 import os
 import glob
 from pathlib import Path
@@ -24,12 +45,14 @@ warnings.filterwarnings("ignore")
 #%% variables
 SAT_VAL = 7000 # saturation value of camera
 FIBER_WIDTH = 40 # width of fiber (in pixels)
+USE_LASER_1 = 0 # first laser used for calculating affine transformation 
+USE_LASER_2 = 2 # second laser used for calculating affine transformation
 
 # store the session id
-session_id = "815736_2025-11-25T11_52_01.2953088-08_00"
+session_id = "836733_2025-12-03T10_34_41.0261632-08_00"
 
-#%% main
-print("Starting HSFP image calibration processing...")
+#%% load calibration image
+print("Starting HSFP image calibration processing step 1...")
         
 # Settings
 data_dir = r"C:\output_data\\"
@@ -41,9 +64,27 @@ tiff_dir = os.path.join(calib_path, 'Tiffs')
 img2d = unskew_image.load_and_average_tiff(tiff_dir)
 
 # Camera offsets
-Xoffset = int(metadata.XOffset[0])
-Yoffset = int(metadata.YOffset[0])
+# Use XOffset if available (Bonsai node V3.2) or Left if not (V4)
+if hasattr(metadata, "XOffset"):
+    Xoffset = int(metadata.XOffset[0])
+else:
+    Xoffset = int(metadata.Left[0])
 
+# Use 'YOffset' if available, otherwise fall back to 'Top'
+if hasattr(metadata, "YOffset"):
+    Yoffset = int(metadata.YOffset[0])
+else:
+    Yoffset = int(metadata.Top[0])
+
+#%% plot averaged image
+f,ax = plt.subplots(figsize=(6,6))
+i = ax.imshow( np.array(img2d), aspect='auto', vmin=0, vmax=SAT_VAL)
+ax.set(xlabel='Camera pixels', ylabel='Camera pixels', title='Calibration Image')
+ax.grid(False)
+f.colorbar(i,ax=ax)
+plt.show()
+
+#%% rotate the image
 # Find laser positions
 h_peaks, v_peaks, img_to_unskew = unskew_image.find_laser_positions(img2d)
 
@@ -66,10 +107,17 @@ for i, x in enumerate(h_peaks_rot):
         print(f"Warning: Could not find edges for laser at x={x}")
 v_peaks_rot = v_peaks_rot.astype(int)
 
+#%% plot the rotated image
+f,ax = plt.subplots(figsize=(6,6))
+i = ax.imshow(img_rotated, aspect='auto', vmin=0, vmax=SAT_VAL)
+ax.set(xlabel='Camera pixels', ylabel='Camera pixels', title='Rotated Image')
+ax.grid(False)
+f.colorbar(i,ax=ax)
+plt.show()
 
-# Analyze fibers
-v_width1, h_width1 = unskew_image.analyze_laser(img_rotated, h_peaks_rot, use_laser=0)
-v_width2, h_width2 = unskew_image.analyze_laser(img_rotated, h_peaks_rot, use_laser=2)
+#%% analyze fibers
+v_width1, h_width1 = unskew_image.analyze_laser(img_rotated, h_peaks_rot, use_laser=USE_LASER_1)
+v_width2, h_width2 = unskew_image.analyze_laser(img_rotated, h_peaks_rot, use_laser=USE_LASER_2)
 
 # Define affine points and transform image
 pt1, pt2, pt3 = [h_width1[0], v_width1[0]], [h_width1[1], v_width1[1]], [h_width2[0], v_width2[0]]
@@ -94,9 +142,9 @@ for i, x in enumerate(h_peaks_final):
         print(f"Warning: Could not find edges for laser at x={x}")
 v_peaks_final = v_peaks_final.astype(int)
 
-fiber1, fiber2 = unskew_image.store_fiber_boundaries(img_final, h_peaks_final, use_laser=2)
+fiber1, fiber2 = unskew_image.store_fiber_boundaries(img_final, h_peaks_final, use_laser=USE_LASER_2)
 
-# Save results
+#%% save results
 pt1[0] = int(pt1[0] + Xoffset)
 pt2[0] = int(pt2[0] + Xoffset)
 pt3[0] = int(pt3[0] + Xoffset)
@@ -119,4 +167,53 @@ results_path = os.path.join(path, 'fib')
 results_dir = Path(results_path)
 unskew_image.save_results(img_final, theta_r, [pt1, pt2, pt3, pt4, pt5, pt6], [fiber1, fiber2], Xoffset, Yoffset, results_dir)
 
-print("Calibration processing complete.")
+print("Calibration processing step 1 complete.")
+
+#%% create 1x3 subplots to show raw, rotated, and transformed image
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+# --- Left: Original image with midpoints ---
+im0 = axes[0].imshow(img_to_unskew, aspect='auto', vmin=0, vmax=SAT_VAL)
+axes[0].plot(h_peaks, v_peaks, 'ro', markersize=5, label='Laser midpoints')
+axes[0].set(title='Calibration Image - Raw', xlabel='Camera pixels', ylabel='Camera pixels')
+axes[0].legend()
+#cbar0 = fig.colorbar(im0, ax=axes[0], fraction=0.046, pad=0.04)
+#cbar0.set_label('Pixel Intensity')
+
+# --- Middle: Rotated image with midpoints ---
+im1 = axes[1].imshow(img_rotated, aspect='auto', vmin=0, vmax=SAT_VAL)
+axes[1].plot(h_peaks_rot, v_peaks_rot, 'ro', markersize=5, label='Laser midpoints')
+axes[1].set(title='Calibration Image - Rotated', xlabel='Camera pixels', 
+            #ylabel='Camera pixels'
+           )
+axes[1].yaxis.set_visible(False)
+axes[1].legend()
+#cbar1 = fig.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04) # uncomment to give plot its own colorbar
+#cbar1.set_label('Pixel Intensity')
+
+# --- Right: Final image with midpoints ---
+im2 = axes[2].imshow(img_final, aspect='auto', vmin=0, vmax=SAT_VAL)
+axes[2].plot(h_peaks_final, v_peaks_final, 'ro', markersize=5, label='Laser midpoints')
+
+# Add horizontal lines for fiber boundaries
+axes[2].axhline((fiber1[0]-Yoffset), color='red', linestyle='--', linewidth=2, label='Fiber 1 Boundaries')
+axes[2].axhline((fiber1[1]-Yoffset), color='red', linestyle='--', linewidth=2, 
+                #label='Fiber1 Bottom'
+               )
+axes[2].axhline((fiber2[0]-Yoffset), color='blue', linestyle='--', linewidth=2, label='Fiber 2 Boundaries')
+axes[2].axhline((fiber2[1]-Yoffset), color='blue', linestyle='--', linewidth=2, 
+                #label='Fiber2 Bottom'
+               )
+
+axes[2].set(title='Calibration Image - Final', xlabel='Camera pixels', 
+            #ylabel='Camera pixels'
+           )
+axes[2].yaxis.set_visible(False)
+axes[2].legend(loc='upper right')
+
+cbar2 = fig.colorbar(im2, ax=axes[2], fraction=0.046, pad=0.04)
+cbar2.set_label('Pixel Intensity', rotation=270, labelpad=15)
+
+plt.tight_layout()
+plt.show()

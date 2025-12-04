@@ -15,6 +15,7 @@ import ast
 
 # Lasers used for calibration
 lasers = np.array([0.594, 0.514, 0.488, 0.445, 0.405])
+session_id = "815738_2025-11-25T11_19_02.6493184-08_00" # NEED TO CORRECT FOR CODE OCEAN
 
 # Physical constants
 SELLMEIER_COEFFS = (1.73759695, 0.313747356, 1.89878101)
@@ -122,7 +123,7 @@ if __name__ == '__main__': # ensures this code only runs if the script is execut
     # results_dir = Path(args.results_dir)
     
     # Define session_id
-    session_id = "815738_2025-11-25T11_19_02.6493184-08_00" # NEED TO CORRECT FOR CODE OCEAN
+    # session_id = "815738_2025-11-25T11_19_02.6493184-08_00" # NEED TO CORRECT FOR CODE OCEAN
     
     # Settings
     data_dir = r"C:\output_data\\" # NEED TO CORRECT FOR CODE OCEAN
@@ -153,3 +154,5 @@ if __name__ == '__main__': # ensures this code only runs if the script is execut
     
     with h5py.File(hdf5_file, 'r') as f:
         print("HDF5 keys:", list(f.keys()))
+    
+    print("Calibration processing step 2 complete.")
