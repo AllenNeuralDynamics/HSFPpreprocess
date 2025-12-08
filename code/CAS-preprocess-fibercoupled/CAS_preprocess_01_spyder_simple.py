@@ -43,13 +43,14 @@ import CAS_preprocess_01_fibercoupled as unskew_image
 warnings.filterwarnings("ignore")
 
 #%% variables
-SAT_VAL = 7000 # saturation value of camera
-FIBER_WIDTH = 40 # width of fiber (in pixels)
-USE_LASER_1 = 0 # first laser used for calculating affine transformation 
-USE_LASER_2 = 2 # second laser used for calculating affine transformation
+SAT_VAL = 12000 # saturation value of camera (Smrithi: 12000, Carrie: 7000)
+FIBER_WIDTH = 60 # width of fiber in pixels (Smrithi: 60, Carrie: 40)
+USE_LASER_1 = 1 # first laser used for calculating affine transformation (Smrithi: 1, Carrie: 0)
+USE_LASER_2 = 2 # second laser used for calculating affine transformation (Smrithi: 2, Carrie: 2)
+DISTANCE = 100 # distance between peaks used to find the lasers (Smrithi: 100, Carrie: 50)
 
 # store the session id
-session_id = "836733_2025-12-03T10_34_41.0261632-08_00"
+session_id = "HSFP_775510_2025-02-20_11-08-27"
 
 #%% load calibration image
 print("Starting HSFP image calibration processing step 1...")
@@ -86,14 +87,14 @@ plt.show()
 
 #%% rotate the image
 # Find laser positions
-h_peaks, v_peaks, img_to_unskew = unskew_image.find_laser_positions(img2d)
+h_peaks, v_peaks, img_to_unskew = unskew_image.find_laser_positions(img2d, height_thresh=2000, dist_thresh=DISTANCE, sat_val=SAT_VAL)
 
 # Rotate image
 img_rotated, theta_r = unskew_image.rotate_image(img_to_unskew, h_peaks, v_peaks)
 
 # Calculate centers of each laser after rotation
 h_line = np.mean(img_rotated, axis=0)
-h_peaks_rot, _ = find_peaks(h_line, height=2000, distance=50)
+h_peaks_rot, _ = find_peaks(h_line, height=2000, distance=DISTANCE)
 
 v_peaks_rot = np.zeros(np.size(h_peaks_rot))
 for i, x in enumerate(h_peaks_rot):
@@ -116,8 +117,8 @@ f.colorbar(i,ax=ax)
 plt.show()
 
 #%% analyze fibers
-v_width1, h_width1 = unskew_image.analyze_laser(img_rotated, h_peaks_rot, use_laser=USE_LASER_1)
-v_width2, h_width2 = unskew_image.analyze_laser(img_rotated, h_peaks_rot, use_laser=USE_LASER_2)
+v_width1, h_width1 = unskew_image.analyze_laser(img_rotated, h_peaks_rot, use_laser=USE_LASER_1, sat_val=SAT_VAL, fiber_width=FIBER_WIDTH)
+v_width2, h_width2 = unskew_image.analyze_laser(img_rotated, h_peaks_rot, use_laser=USE_LASER_2, sat_val=SAT_VAL, fiber_width=FIBER_WIDTH)
 
 # Define affine points and transform image
 pt1, pt2, pt3 = [h_width1[0], v_width1[0]], [h_width1[1], v_width1[1]], [h_width2[0], v_width2[0]]
@@ -128,7 +129,7 @@ img_final = unskew_image.perform_affine_transform(img_rotated, [pt1, pt2, pt3], 
 
 # Store fiber boundaries
 h_line_final = np.mean(img_final, axis=0)
-h_peaks_final, _ = find_peaks(h_line_final, height=2000, distance=50)
+h_peaks_final, _ = find_peaks(h_line_final, height=2000, distance=DISTANCE)
 
 v_peaks_final = np.zeros(np.size(h_peaks_final))
 for i, x in enumerate(h_peaks_final):
@@ -142,7 +143,7 @@ for i, x in enumerate(h_peaks_final):
         print(f"Warning: Could not find edges for laser at x={x}")
 v_peaks_final = v_peaks_final.astype(int)
 
-fiber1, fiber2 = unskew_image.store_fiber_boundaries(img_final, h_peaks_final, use_laser=USE_LASER_2)
+fiber1, fiber2 = unskew_image.store_fiber_boundaries(img_final, h_peaks_final, use_laser=USE_LASER_2, sat_val=SAT_VAL)
 
 #%% save results
 pt1[0] = int(pt1[0] + Xoffset)

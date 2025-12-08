@@ -46,12 +46,14 @@ from scipy.signal import find_peaks
 import itertools
 import cv2 as cv
 import h5py
+import ast
 from PIL import Image
 from pathlib import Path
+import CAS_preprocess_03_fibercoupled as tiff_to_intensity
 
 # %% variables
 # store the session id
-session_id = 'BigTiffs2025-02-20T11_08_27.6009600-08_00'
+session_id = 'HSFP_775510_2025-02-20_11-08-27'
 
 # %% # path settings  
 data_dir =Path("C:/output_data") # NEED TO CORRECT FOR CODE OCEAN
@@ -66,11 +68,61 @@ if not results_dir.exists():
 if not calib_file.exists():
     raise FileNotFoundError(f"Calibration file not found: {calib_file}")
 
-#%% Find all session metadata CSV files
-metadata_files = natsorted(list(results_dir.glob("session*.csv")))
-if not metadata_files:
-    raise FileNotFoundError(f"No metadata CSVs found in {results_dir}")
-print("\nMetadata CSV file names:\n", metadata_files)
+
+#%% load session_params.csv and fix framestamp rollover
+num_frames, times, frames, metadata_files = tiff_to_intensity.load_session_params(results_dir)
+
+print("Processed CSV files (in order):")
+for p in metadata_files:
+    print("  -", p.name)
+
+print("\nnumber of frames per recording fragment:", num_frames)
+for i, (t, f) in enumerate(zip(times, frames)):
+    print(f"\nRecording {i}:")
+    #print(f"  time: array length = {t.size}, example [-5:] = {t[-5:]}")
+    print(f"  Frames (corrected): length = {f.size}, example [-5:] = {f[-5:]}")
+
+
+#%% read in camera dimensions and offsets, convert to integers
+metadata = pd.read_csv(metadata_files[0])
+width = metadata.Width[0]
+height = metadata.Height[0]
+# Use XOffset if available (Bonsai node V3.2) or Left if not (V4)
+if hasattr(metadata, "XOffset"):
+    Xoffset = int(metadata.XOffset[0])
+else:
+    Xoffset = int(metadata.Left[0])
+# Use 'YOffset' if available, otherwise fall back to 'Top'
+if hasattr(metadata, "YOffset"):
+    Yoffset = int(metadata.YOffset[0])
+else:
+    Yoffset = int(metadata.Top[0])
+
+print('\nWidth: ' + str(width))
+print('Height: ' + str(height))
+print('X Offset: ' + str(Xoffset))
+print('Y Offset: ' + str(Yoffset))
+
+#%% extract values from calibration.txt
+theta_r, pt1, pt2, pt3, pt4, pt5, pt6, fiber1_location, fiber2_location = tiff_to_intensity.load_calib_values(calib_file, Xoffset, Yoffset)
+
+
+#%% Create rotation and affine transformation matrix for the recording
+rows,cols = [height, width]
+M1 = cv.getRotationMatrix2D(((cols-1)/2.0,(rows-1)/2.0),theta_r,1)
+pts1 = np.float32([pt1, pt2, pt3])
+pts2 = np.float32([pt4, pt5, pt6])
+M2 = cv.getAffineTransform(pts1,pts2)
+
+
+
+
+
+
+
+
+
+
 
 #%% 
 numFrames = np.zeros(len(metadata_files), dtype=int) # store the number of frames in each metadata file
@@ -142,26 +194,15 @@ print("Detected rollovers per file:", rollovers_per_file)
 
 
 
-#%% Read in camera dimensions and offsets, convert to integers
-width = metadata.Width[0]
-print('\nWidth: ' + str(width))
 
-height = metadata.Height[0]
-print('Height: ' + str(height))
 
-# Use XOffset if available (Bonsai node V3.2) or Left if not (V4)
-if hasattr(metadata, "XOffset"):
-    Xoffset = int(metadata.XOffset[0])
-else:
-    Xoffset = int(metadata.Left[0])
-print('X Offset: ' + str(Xoffset))
 
-# Use 'YOffset' if available, otherwise fall back to 'Top'
-if hasattr(metadata, "YOffset"):
-    Yoffset = int(metadata.YOffset[0])
-else:
-    Yoffset = int(metadata.Top[0])
-print('Y Offset: ' + str(Yoffset))
+
+
+
+
+
+
 
 # %% # Unskew image - rotation followed by affine transformation
 
@@ -186,12 +227,7 @@ fiber2_location = [fiber2_pixels[1]-Yoffset,fiber2_pixels[0]-Yoffset]
 fiber1_location = [int(x) for x in fiber1_location]
 fiber2_location = [int(x) for x in fiber2_location]
 
-# Create rotation and affine transformation matrix for the recording
-rows,cols = [height, width]
-M1 = cv.getRotationMatrix2D(((cols-1)/2.0,(rows-1)/2.0),theta_r,1)
-pts1 = np.float32([pt1, pt2, pt3])
-pts2 = np.float32([pt4, pt5, pt6])
-M2 = cv.getAffineTransform(pts1,pts2)
+
  
 # %% Get all Tiff directories
 files = os.listdir(results_dir)

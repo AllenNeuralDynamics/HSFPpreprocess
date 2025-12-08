@@ -39,14 +39,15 @@ import CAS_preprocess_02_fibercoupled as pixel_to_nm
 # Lasers used for calibration
 lasers = np.array([0.561, 0.514, 0.488, 0.445, 0.405])
 
-session_id = "836732_2025-12-03T10_23_42.2755328-08_00" # NEED TO CORRECT FOR CODE OCEAN
+session_id = "HSFP_775510_2025-02-20_11-08-27" # NEED TO CORRECT FOR CODE OCEAN
 
 # Physical constants
-SELLMEIER_COEFFS = (1.73759695, 0.313747356, 1.89878101)
-SELLMEIER_TERMS = (0.013188707, 0.0623068142, 155.23629)
-THETA_I = 60.8  # angle of incidence (degrees)
-ALPHA = 60      # prism apex angle (degrees)
+# SELLMEIER_COEFFS = (1.73759695, 0.313747356, 1.89878101)
+# SELLMEIER_TERMS = (0.013188707, 0.0623068142, 155.23629)
+# THETA_I = 60.8  # angle of incidence (degrees)
+# ALPHA = 60      # prism apex angle (degrees)
 SAT_VAL = 7000  # value of laser saturation
+DISTANCE = 50
 
 #%% load calibration image
 print("Starting HSFP image calibration processing step 2...")
@@ -64,7 +65,7 @@ calib_image = results_dir / 'CalibrationImage.tiff'
 calib_file = results_dir / 'calibration.txt'
 
 # find pixels corresponding to center position of each laser
-laser_pix = pixel_to_nm.find_laser_pixels(calib_image)
+laser_pix = pixel_to_nm.find_laser_pixels(calib_image, height_thresh=4000, dist_thresh=DISTANCE)
 
 #%% optimization function (return pixel value given angle of deviation as input)
 popt, theta_D = pixel_to_nm.fit_wavelength_to_pixels(lasers, laser_pix)
