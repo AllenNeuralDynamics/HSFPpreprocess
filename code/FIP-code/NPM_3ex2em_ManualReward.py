@@ -14,9 +14,7 @@ TrialType_
 
 @author: kenta.hagihara
 """
-
 #%% setup/imports
-
 import os
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
@@ -35,7 +33,7 @@ import PreprocessingFunctions2 as pf
 # SaveDir=r''
 # AnalDir=r'...\behavior'
 
-session_id = 'FIP_836733_2025-11-26_10-37-59'
+session_id = 'FIP_836732_2025-12-03_10-23-43'
 
 SaveDir = r'C:\output_data\results\results_' + session_id
 AnalDir = r'C:\output_data' + os.sep + session_id + os.sep + 'behavior'
@@ -44,12 +42,11 @@ AnalDir = r'C:\output_data' + os.sep + session_id + os.sep + 'behavior'
 os.makedirs(SaveDir, exist_ok=True)
 
 # manually enter when the first reward trial that should actually be counted happened
-first_rew_idx = 2          #  2 for 836733 12/3/25
-                            # 21 for 836732 12/3/25
-
+first_rew_idx = 23           # 0 for 836733 12/3/25
+                            # 23 for 836732 12/3/25
 # for visualization
 #Roi2Vis=[0,1,2]
-Roi2Vis = [0,1]
+Roi2Vis = [0]
 AllPlot=0
 
 # params for pre-processing
@@ -125,6 +122,7 @@ for file_i in range(len(TSfiles)):
 #%% Trim out initial manual rewards
 TSdict['Reward'] = TSdict['Reward'][first_rew_idx:, :]
 
+
 #%% Adjust recording end time
 # in case acquisition halted accidentally
 Length = np.amin([len(data1),len(data2),len(data3)])
@@ -135,7 +133,6 @@ data3 = data3[0:Length] #Stim
 
 PMts= data2[:,0] #SignalTS
 time_seconds = np.arange(len(data1)) /sampling_rate
-
 #%% Preprocess
 Ctrl_dF_F=np.zeros((data1.shape[0],data1.shape[1]))
 G_dF_F=np.zeros((data1.shape[0],data1.shape[1]))
@@ -163,7 +160,6 @@ CS1Frames = TSFramesdict['CS1']
 CS2Frames = TSFramesdict['CS2']
 CS3Frames = TSFramesdict['CS3']
 LickFrames = TSFramesdict['Lick']
-
 #%% optional pupil tracking
 
 if bool(glob.glob(AnalDir + os.sep + "PupilTracking*")) == True:
@@ -273,7 +269,7 @@ for ii in range(len(CS3Frames)):
 plt.axvspan(RewardFrames[0]/20, RewardFrames[0]/20, color = [0, 0, 1, 0.4],label='Reward')
 #plt.axvspan(CS1Frames[0]/20, CS1Frames[0]/20, color = [1, 0, 0, 0.4],label='CS1')
 #plt.axvspan(CS2Frames[0]/20, CS2Frames[0]/20, color = [0, 1, 0, 0.4],label='CS2') 
-plt.axvspan(CS3Frames[0]/20, CS3Frames[0]/20, color = [1, 0, 1, 0.4],label='CS3')
+#plt.axvspan(CS3Frames[0]/20, CS3Frames[0]/20, color = [1, 0, 1, 0.4],label='CS3')
 
 plt.legend()
 
@@ -283,7 +279,7 @@ if bool(glob.glob(AnalDir + os.sep + "PupilTracking*")) == True:
     plt.xlim([0, time_seconds[-1]])
     plt.legend()
     
-#%% Define PSTH functions (for multiple traces)
+#%% define PSTH functions (for multiple traces)
 def PSTHmaker(TC, Stims, preW, postW):
     
     cnt = 0
@@ -335,187 +331,68 @@ def PSTH_baseline(PSTH, preW):
     return PSTHbase
 
 
-#%% Identify rewarded vs unrewarded trials
+#%% Create a range array for the number of reward trials
 #% Trial csv handing
+ManualRewards = np.arange(len(RewardFrames))
 
-if bool(glob.glob(AnalDir + os.sep + "TrialN_*")) == True:
-    file_TrialMat = glob.glob(AnalDir + os.sep + "TrialN_*")[0]
-    df = pd.read_csv(file_TrialMat)
-
-    Mat_CS1=np.where((df['TrialType']<=10) & (df['TrialType']>=1))[0]
-    Mat_CS2=np.where((df['TrialType']<=20) & (df['TrialType']>=11))[0]
-    Mat_CS3=np.where((df['TrialType']<=30) & (df['TrialType']>=21))[0]
-    
-    Mat_CS1R=np.where(df['TrialType']==1)[0]
-    Mat_CS1UR=np.where((df['TrialType']<=10) & (df['TrialType']>=2))[0]
-    Mat_CS2R=np.where((df['TrialType']<=15) & (df['TrialType']>=11))[0]
-    Mat_CS2UR=np.where((df['TrialType']<=20) & (df['TrialType']>=16))[0]
-    Mat_CS3R=np.where((df['TrialType']<=29) & (df['TrialType']>=21))[0]
-    Mat_CS3UR=np.where(df['TrialType']==30)[0]
-    
-    RewardedCS1ind = np.where(np.isin(Mat_CS1, Mat_CS1R))[0]
-    RewardedCS2ind = np.where(np.isin(Mat_CS2, Mat_CS2R))[0]
-    RewardedCS3ind = np.where(np.isin(Mat_CS3, Mat_CS3R))[0]
-    UnRewardedCS1ind = np.where(np.isin(Mat_CS1, Mat_CS1UR))[0]
-    UnRewardedCS2ind = np.where(np.isin(Mat_CS2, Mat_CS2UR))[0]
-    UnRewardedCS3ind = np.where(np.isin(Mat_CS3, Mat_CS3UR))[0]
-
-if bool(glob.glob(AnalDir + os.sep + "Trial_Reversal_*")) == True:
-    file_Reversal = glob.glob(AnalDir + os.sep + "Trial_Reversal_*")[0]
-    df_Reversal = pd.read_csv(file_Reversal)
-    TrialSwitched = df_Reversal['TrialSwitched'][0] 
-    
-    
-    Mat_CS1=np.where((df['TrialType']<=10) & (df['TrialType']>=1) & (df['TrialNumber']<=TrialSwitched))[0]
-    Mat_CS2=np.where((df['TrialType']<=20) & (df['TrialType']>=11))[0]
-    Mat_CS3=np.where((df['TrialType']<=30) & (df['TrialType']>=21)& (df['TrialNumber']<=TrialSwitched))[0]
-    
-    Mat_CS1R=np.where(df['TrialType']==1 & (df['TrialNumber']<=TrialSwitched))[0]
-    Mat_CS1UR=np.where((df['TrialType']<=10) & (df['TrialType']>=2) & (df['TrialNumber']<=TrialSwitched))[0]
-    Mat_CS2R=np.where((df['TrialType']<=15) & (df['TrialType']>=11))[0]
-    Mat_CS2UR=np.where((df['TrialType']<=20) & (df['TrialType']>=16))[0]
-    Mat_CS3R=np.where((df['TrialType']<=29) & (df['TrialType']>=21) & (df['TrialNumber']<=TrialSwitched))[0]
-    Mat_CS3UR=np.where(df['TrialType']==30 & (df['TrialNumber']<=TrialSwitched))[0]
-    
-    Mat_CS1=np.append(Mat_CS1, np.where((df['TrialType']<=30) & (df['TrialType']>=21) & (df['TrialNumber']>TrialSwitched))[0])
-    Mat_CS3=np.append(Mat_CS3, np.where((df['TrialType']<=10) & (df['TrialType']>=1) & (df['TrialNumber']>TrialSwitched))[0])   
-    
-    Mat_CS1R=np.append(Mat_CS1R, np.where((df['TrialType']<=29) & (df['TrialType']>=21) & (df['TrialNumber']>TrialSwitched))[0])
-    Mat_CS1UR=np.append(Mat_CS1UR, np.where((df['TrialType']==30) & (df['TrialNumber']>TrialSwitched))[0])
-    Mat_CS3R=np.append(Mat_CS3R, np.where((df['TrialType']==1) & (df['TrialNumber']>TrialSwitched))[0])
-    Mat_CS3UR=np.append(Mat_CS3UR, np.where((df['TrialType']<=10) & (df['TrialType']>=2) & (df['TrialNumber']>TrialSwitched))[0])
-    
-    RewardedCS1ind = np.where(np.isin(Mat_CS1, Mat_CS1R))[0]
-    RewardedCS2ind = np.where(np.isin(Mat_CS2, Mat_CS2R))[0]
-    RewardedCS3ind = np.where(np.isin(Mat_CS3, Mat_CS3R))[0]
-    UnRewardedCS1ind = np.where(np.isin(Mat_CS1, Mat_CS1UR))[0]
-    UnRewardedCS2ind = np.where(np.isin(Mat_CS2, Mat_CS2UR))[0]
-    UnRewardedCS3ind = np.where(np.isin(Mat_CS3, Mat_CS3UR))[0]
-
-
-#% when no csv    
-# else:
-#     RewardedCS1ind=[]
-#     RewardedCS2ind=[]
-#     RewardedCS3ind=[]
-    
-#     for ii in range(len(RewardFrames)):
-# #        idx_CS1 = np.argmin(np.abs(CS1Frames[:] - RewardFrames[ii]))
-# #        idx_CS2 = np.argmin(np.abs(CS2Frames[:] - RewardFrames[ii]))
-#         idx_CS3 = np.argmin(np.abs(CS3Frames[:] - RewardFrames[ii]))
-        
-# #        if CS1Frames[idx_CS1] - RewardFrames[ii]>0:
-# #            idx_CS1 = idx_CS1-1
-# #        if CS2Frames[idx_CS2] - RewardFrames[ii]>0:
-# #            idx_CS2 = idx_CS2-1        
-#         if CS3Frames[idx_CS3] - RewardFrames[ii]>0:
-#             idx_CS3 = idx_CS3-1        
-    
-# #        if CS1Frames[idx_CS1] == np.max([CS1Frames[idx_CS1],CS2Frames[idx_CS2],CS3Frames[idx_CS3]]):
-# #            RewardedCS1ind = np.append(RewardedCS1ind,idx_CS1)
-# #        if CS2Frames[idx_CS2] == np.max([CS1Frames[idx_CS1],CS2Frames[idx_CS2],CS3Frames[idx_CS3]]):
-# #            RewardedCS2ind = np.append(RewardedCS2ind,idx_CS2)
-#         if CS3Frames[idx_CS3] == np.max([CS3Frames[idx_CS3]]):
-#             RewardedCS3ind = np.append(RewardedCS3ind,idx_CS3)
-    
-# #    UnRewardedCS1ind = np.setdiff1d(range(len(CS1Frames)),RewardedCS1ind)
-# #    UnRewardedCS2ind = np.setdiff1d(range(len(CS2Frames)),RewardedCS2ind)
-#     UnRewardedCS3ind = np.setdiff1d(range(len(CS3Frames)),RewardedCS3ind)
-
-#%% Calculate PSTH for signal around all trial types
-'''
-Psth_G_CS1R = PSTHmaker(G_dF_F*100, CS1Frames[RewardedCS1ind.astype(int)], 100, 300)
-Psth_R_CS1R = PSTHmaker(R_dF_F*100, CS1Frames[RewardedCS1ind.astype(int)], 100, 300)
-Psth_C_CS1R = PSTHmaker(Ctrl_dF_F*100, CS1Frames[RewardedCS1ind.astype(int)], 100, 300)
-Psth_G_CS1R_base = PSTH_baseline(Psth_G_CS1R, 100)
-Psth_R_CS1R_base = PSTH_baseline(Psth_R_CS1R, 100)
-Psth_C_CS1R_base = PSTH_baseline(Psth_C_CS1R, 100)  
-
-Psth_G_CS1UR = PSTHmaker(G_dF_F*100, CS1Frames[UnRewardedCS1ind.astype(int)], 100, 300)
-Psth_R_CS1UR = PSTHmaker(R_dF_F*100, CS1Frames[UnRewardedCS1ind.astype(int)], 100, 300)
-Psth_C_CS1UR = PSTHmaker(Ctrl_dF_F*100, CS1Frames[UnRewardedCS1ind.astype(int)], 100, 300)
-Psth_G_CS1UR_base = PSTH_baseline(Psth_G_CS1UR, 100)
-Psth_R_CS1UR_base = PSTH_baseline(Psth_R_CS1UR, 100)
-Psth_C_CS1UR_base = PSTH_baseline(Psth_C_CS1UR, 100)
-
-Psth_G_CS2R = PSTHmaker(G_dF_F*100, CS2Frames[RewardedCS2ind.astype(int)], 100, 300)
-Psth_R_CS2R = PSTHmaker(R_dF_F*100, CS2Frames[RewardedCS2ind.astype(int)], 100, 300)
-Psth_C_CS2R = PSTHmaker(Ctrl_dF_F*100, CS2Frames[RewardedCS2ind.astype(int)], 100, 300)
-Psth_G_CS2R_base = PSTH_baseline(Psth_G_CS2R, 100)
-Psth_R_CS2R_base = PSTH_baseline(Psth_R_CS2R, 100)
-Psth_C_CS2R_base = PSTH_baseline(Psth_C_CS2R, 100)  
-
-Psth_G_CS2UR = PSTHmaker(G_dF_F*100, CS2Frames[UnRewardedCS2ind.astype(int)], 100, 300)
-Psth_R_CS2UR = PSTHmaker(R_dF_F*100, CS2Frames[UnRewardedCS2ind.astype(int)], 100, 300)
-Psth_C_CS2UR = PSTHmaker(Ctrl_dF_F*100, CS2Frames[UnRewardedCS2ind.astype(int)], 100, 300)
-Psth_G_CS2UR_base = PSTH_baseline(Psth_G_CS2UR, 100)
-Psth_R_CS2UR_base = PSTH_baseline(Psth_R_CS2UR, 100)
-Psth_C_CS2UR_base = PSTH_baseline(Psth_C_CS2UR, 100)
-'''
-Psth_G_CS3R = PSTHmaker(G_dF_F*100, CS3Frames[RewardedCS3ind.astype(int)], 100, 300)
-Psth_R_CS3R = PSTHmaker(R_dF_F*100, CS3Frames[RewardedCS3ind.astype(int)], 100, 300)
-Psth_C_CS3R = PSTHmaker(Ctrl_dF_F*100, CS3Frames[RewardedCS3ind.astype(int)], 100, 300)
-Psth_G_CS3R_base = PSTH_baseline(Psth_G_CS3R, 100)
-Psth_R_CS3R_base = PSTH_baseline(Psth_R_CS3R, 100)
-Psth_C_CS3R_base = PSTH_baseline(Psth_C_CS3R, 100)  
-
-Psth_G_CS3UR = PSTHmaker(G_dF_F*100, CS3Frames[UnRewardedCS3ind.astype(int)], 100, 300)
-Psth_R_CS3UR = PSTHmaker(R_dF_F*100, CS3Frames[UnRewardedCS3ind.astype(int)], 100, 300)
-Psth_C_CS3UR = PSTHmaker(Ctrl_dF_F*100, CS3Frames[UnRewardedCS3ind.astype(int)], 100, 300)
-Psth_G_CS3UR_base = PSTH_baseline(Psth_G_CS3UR, 100)
-Psth_R_CS3UR_base = PSTH_baseline(Psth_R_CS3UR, 100)
-Psth_C_CS3UR_base = PSTH_baseline(Psth_C_CS3UR, 100)
+#%% Calculate PSTH for signal around manual rewards
+Psth_G_ManRew = PSTHmaker(G_dF_F*100, RewardFrames, 100, 300)
+Psth_R_ManRew = PSTHmaker(R_dF_F*100, RewardFrames, 100, 300)
+Psth_C_ManRew = PSTHmaker(Ctrl_dF_F*100, RewardFrames, 100, 300)
+Psth_G_ManRew_base = PSTH_baseline(Psth_G_ManRew, 100)
+Psth_R_ManRew_base = PSTH_baseline(Psth_R_ManRew, 100)
+Psth_C_ManRew_base = PSTH_baseline(Psth_C_ManRew, 100)  
 
         
-##
+#%%  Calculate ymin and ymax
 ymin=np.empty(len(Roi2Vis)+1)
 ymax=np.empty(len(Roi2Vis)+1)
 for ii in range(len(Roi2Vis)):
     ymax[ii]=np.max([
-    np.max(np.mean(Psth_G_CS3R_base[:,Roi2Vis[ii],:],axis=1)),
-    np.max(np.mean(Psth_G_CS3UR_base[:,Roi2Vis[ii],:],axis=1))])
+    np.max(np.mean(Psth_G_ManRew_base[:,Roi2Vis[ii],:],axis=1)),
+    np.max(np.mean(Psth_R_ManRew_base[:,Roi2Vis[ii],:],axis=1))])
     
     ymin[ii]=np.min([
-    np.min(np.mean(Psth_G_CS3R_base[:,Roi2Vis[ii],:],axis=1)),
-    np.min(np.mean(Psth_G_CS3UR_base[:,Roi2Vis[ii],:],axis=1))])
+    np.min(np.mean(Psth_G_ManRew_base[:,Roi2Vis[ii],:],axis=1)),
+    np.min(np.mean(Psth_R_ManRew_base[:,Roi2Vis[ii],:],axis=1))])
 
 ymax[ii+1]=np.max([
-np.max(np.mean(Psth_R_CS3R_base[:,0,:],axis=1)),
-np.max(np.mean(Psth_R_CS3UR_base[:,0,:],axis=1))])
+np.max(np.mean(Psth_R_ManRew_base[:,0,:],axis=1)),
+np.max(np.mean(Psth_R_ManRew_base[:,0,:],axis=1))])
 
 ymin[ii+1]=np.min([
-np.min(np.mean(Psth_R_CS3R_base[:,0,:],axis=1)),
-np.min(np.mean(Psth_R_CS3UR_base[:,0,:],axis=1))])
+np.min(np.mean(Psth_R_ManRew_base[:,0,:],axis=1)),
+np.min(np.mean(Psth_R_ManRew_base[:,0,:],axis=1))])
 
-#%% PLOT summary of rewarded vs unrewarded signal
+#%% PLOT summary of signal during reward
 figT=plt.figure('Summary:' + AnalDir, figsize=(16, 16))
 
     
 for ii in range(len(Roi2Vis)):
     plt.subplot(gs[4 + ii*2:4 + ii*2+2, 0:3])
-    PSTHplot(Psth_G_CS3R_base[:,Roi2Vis[ii],:].T, "g", "darkgreen", "R+")
-    PSTHplot(Psth_C_CS3R_base[:,Roi2Vis[ii],:].T, "b", "darkblue", "Iso_R+")
-    PSTHplot(Psth_G_CS3UR_base[:,Roi2Vis[ii],:].T, "m", "darkmagenta", "R-")
-    PSTHplot(Psth_C_CS3UR_base[:,Roi2Vis[ii],:].T, "k", "k", "Iso_R-")    
+    PSTHplot(Psth_G_ManRew_base[:,Roi2Vis[ii],:].T, "g", "darkgreen", "R+")
+    PSTHplot(Psth_C_ManRew_base[:,Roi2Vis[ii],:].T, "b", "darkblue", "Iso_R+")
+    # PSTHplot(Psth_G_CS3UR_base[:,Roi2Vis[ii],:].T, "m", "darkmagenta", "R-")
+    # PSTHplot(Psth_C_CS3UR_base[:,Roi2Vis[ii],:].T, "k", "k", "Iso_R-")    
     plt.ylim([ymin[ii]*1.1, ymax[ii]*1.1])
     plt.xlim([-5,15])
     plt.grid(True)
-    plt.title("CS3(90%Rew) all trials, ROI-Green: " + str(ii))
+    plt.title("Manual Rewards, ROI-Green: " + str(ii))
     plt.xlabel('Time - Tone (s)')
     plt.axvspan(0, 1.0, color = [1, 0, 1, 0.4])
     plt.axvspan(2.0, 2.5, color = [0, 0, 1, 0.4])
     
 
     plt.subplot(gs[4 + ii*2: 4 + ii*2+2, 3:6])
-    PSTHplot(Psth_R_CS3R_base[:,Roi2Vis[ii],:].T, "g", "darkgreen", "R+")
-    PSTHplot(Psth_C_CS3R_base[:,Roi2Vis[ii],:].T, "b", "darkblue", "Iso_R+")
-    PSTHplot(Psth_R_CS3UR_base[:,Roi2Vis[ii],:].T, "m", "darkmagenta", "R-")
-    PSTHplot(Psth_C_CS3UR_base[:,Roi2Vis[ii],:].T, "k", "k", "Iso_R-")    
+    PSTHplot(Psth_R_ManRew_base[:,Roi2Vis[ii],:].T, "g", "darkgreen", "R+")
+    PSTHplot(Psth_C_ManRew_base[:,Roi2Vis[ii],:].T, "b", "darkblue", "Iso_R+")
+    # PSTHplot(Psth_R_CS3UR_base[:,Roi2Vis[ii],:].T, "m", "darkmagenta", "R-")
+    # PSTHplot(Psth_C_CS3UR_base[:,Roi2Vis[ii],:].T, "k", "k", "Iso_R-")    
     plt.ylim([ymin[ii]*1.1, ymax[ii]*1.1])
    # plt.ylim([-5, 5])
     plt.xlim([-5,15])
     plt.grid(True)
-    plt.title("CS3(90%Rew) all trials, ROI-Red: " + str(ii))
+    plt.title("Manual Rewards, ROI-Red: " + str(ii))
     plt.xlabel('Time - Tone (s)')
     plt.ylabel('dF/F%')
     plt.axvspan(0, 1.0, color = [1, 0, 1, 0.4])
@@ -526,44 +403,42 @@ for ii in range(len(Roi2Vis)):
         # rect=[0, 0.03, 1, 0.95]
         )
     plt.subplots_adjust(hspace=2.0, wspace=0.4)
-#%% Print proportion of rew vs unrew trials
-print('TotalTrial: ' + str(np.sum([len(CS1Frames),len(CS2Frames),len(CS3Frames)])))
-print('CS3Trial: ' + str(len(CS3Frames)))
-print('CS3 Rewarded:' + str(len(RewardedCS3ind)) + ' (' + str(np.single(100*len(RewardedCS3ind)/len(CS3Frames))) + '%)') 
+#%% print total number of reward trials
+print('TotalRews: ' + str(np.sum([len(RewardFrames)])))
+
 
 #%% Lick Quant
 
-Lick_CS3=[]
-Lick_CS3_post=[]
-for ii in range(len(CS3Frames)):
-    count1 = len([x for x in LickFrames if CS3Frames[ii] < x < CS3Frames[ii]+2*20])
-    count2 = len([x for x in LickFrames if CS3Frames[ii]+2*20 < x < CS3Frames[ii]+7*20])
-    Lick_CS3=np.append(Lick_CS3,count1) 
-    Lick_CS3_post=np.append(Lick_CS3_post,count2) 
+Lick_Rew=[]
+Lick_Rew_post=[]
+for ii in range(len(RewardFrames)):
+    count1 = len([x for x in LickFrames if RewardFrames[ii] < x < RewardFrames[ii]+2*20])
+    count2 = len([x for x in LickFrames if RewardFrames[ii]+2*20 < x < RewardFrames[ii]+7*20])
+    Lick_Rew=np.append(Lick_Rew,count1) 
+    Lick_Rew_post=np.append(Lick_Rew_post,count2) 
 
-aveLick_CS3=np.mean(Lick_CS3)
-semLick_CS3=np.std(Lick_CS3)/np.sqrt(len(Lick_CS3))
+aveLick_Rew=np.mean(Lick_Rew)
+semLick_Rew=np.std(Lick_Rew)/np.sqrt(len(Lick_Rew))
 
-aveLick_CS3_UnR=np.mean(Lick_CS3_post[UnRewardedCS3ind.astype(int)])
-semLick_CS3_UnR=np.std(Lick_CS3_post[UnRewardedCS3ind.astype(int)])/np.sqrt(len(Lick_CS3_post[UnRewardedCS3ind.astype(int)]))
+aveLick_Rew_post=np.mean(Lick_Rew_post)
+semLick_Rew_post=np.std(Lick_Rew_post)/np.sqrt(len(Lick_Rew_post))
 
 #%% PLOT lick quantification
 figT=plt.figure('Summary:' + AnalDir, figsize=(16,16))
 
 plt.subplot(gs[10:12, 6:9])
-plt.plot(Lick_CS3,label='Anticipatory Licks')
-plt.plot(Lick_CS3_post,label='Consummatory/Omission Licks')
-plt.plot(RewardedCS3ind, Lick_CS3_post[RewardedCS3ind.astype(int)], '.',color='blue',markersize=10, label='Rewarded')
-plt.plot(UnRewardedCS3ind, Lick_CS3_post[UnRewardedCS3ind.astype(int)], '.',color='Red',markersize=10,label='Unrewarded')
-plt.xlabel('trial#')
-plt.title('CS3 AntiLick:' + str(round(aveLick_CS3,2)) + '+-' +str(round(semLick_CS3,2))+ ' Omission:'+ str(round(aveLick_CS3_UnR,2)) + '+-' +str(round(semLick_CS3_UnR,2)))
+#plt.plot(Lick_Rew,label='Anticipatory')
+plt.plot(Lick_Rew_post,label='Consummatory Licks')
+plt.plot(ManualRewards, Lick_Rew_post[ManualRewards.astype(int)], '.',color='blue',markersize=10, label='Rewarded')
+# plt.plot(UnRewardedCS3ind, Lick_CS3_post[UnRewardedCS3ind.astype(int)], '.',color='Red',markersize=10,label='UnRewarded')
+plt.xlabel('trial #')
+plt.title('Manual Rewards Consummatory Licks:' + str(round(aveLick_Rew_post,2)) + '+-' +str(round(semLick_Rew_post,2)))
 plt.legend(fontsize=7)
 bottom, top = plt.ylim()
 lick_min = np.min(bottom, 0)
 plt.ylim((lick_min, top+10))
 plt.subplots_adjust(hspace = 0.5, wspace=0.25)
 plt.tight_layout()
-
 
 #%% Save summary image
 aDate=os.path.basename(os.path.dirname(AnalDir))
@@ -572,21 +447,21 @@ plt.savefig(SaveDir + os.sep + 'Summary_' + subjectID + '_' + aDate + '.pdf')
 
  
 #%% dF/F trial-by-trial quant
-CSall=np.sort(np.hstack(TSFramesdict['CS3']))
+CSall=np.sort(np.hstack(TSFramesdict['Reward']))
 
-Resp_Cue = np.empty((len(CSall),Ctrl_dF_F.shape[1])) # Cue:CS onset-offset (1s)
+# Resp_Cue = np.empty((len(CSall),Ctrl_dF_F.shape[1])) # Cue:CS onset-offset (1s)
 Resp_Rew = np.empty((len(CSall),Ctrl_dF_F.shape[1]))  # Reward: Reward onset to +3s
 Resp_Tail = np.empty((len(CSall),Ctrl_dF_F.shape[1]))  # tail:next cue - 2sec to next trial 
 Resp_base = np.empty((len(CSall),Ctrl_dF_F.shape[1]))  # base:-2s-0ms
-Resp_Cue_based = np.empty((len(CSall),Ctrl_dF_F.shape[1]))  # baseline subtracted
+# Resp_Cue_based = np.empty((len(CSall),Ctrl_dF_F.shape[1]))  # baseline subtracted
 Resp_Rew_based = np.empty((len(CSall),Ctrl_dF_F.shape[1]))  # 
 Resp_Tail_based = np.empty((len(CSall),Ctrl_dF_F.shape[1]))  # 
 
 TC=G_dF_F*100 # At StimRig, GreenChannel
 
 for ii in range(len(CSall)):
-    Resp_Cue[ii,:] = np.mean(TC[int(CSall[ii]+1):int(CSall[ii]+20),:],axis=0)
-    Resp_Rew[ii,:] = np.mean(TC[int(CSall[ii]+41):int(CSall[ii]+100),:],axis=0)
+    # Resp_Cue[ii,:] = np.mean(TC[int(CSall[ii]+1):int(CSall[ii]+20),:],axis=0)
+    Resp_Rew[ii,:] = np.mean(TC[int(CSall[ii]+1):int(CSall[ii]+100),:],axis=0)
     if ii==len(CSall)-1:
         Resp_Tail[ii,:] = np.mean(TC[int(CSall[ii]+200):int(CSall[ii]+240),:],axis=0)
     else:
@@ -595,115 +470,19 @@ for ii in range(len(CSall)):
     Resp_base[ii,:] = np.mean(TC[int(CSall[ii]-40):int(CSall[ii]),:],axis=0)
 
     #relative to local mean
-    Resp_Cue_based[ii,:] = Resp_Cue[ii,:] - Resp_base[ii,:] 
+    # Resp_Cue_based[ii,:] = Resp_Cue[ii,:] - Resp_base[ii,:] 
     Resp_Rew_based[ii,:] = Resp_Rew[ii,:] - Resp_base[ii,:] 
     Resp_Tail_based[ii,:] = Resp_Tail[ii,:] - Resp_base[ii,:] 
 
-#%% CS, R/UR separation
-plt.figure()
-#[ymin,ymax]=[-50,100]
-plt.subplot(1,3,3)
-plt.scatter(np.random.rand(len(Resp_Rew_based[Mat_CS1UR-1,1]))*0.1 - 0.05 + 1,Resp_Rew_based[Mat_CS1UR-1,1],color= [1, 0, 0, 0.2], label='CS1')
-plt.scatter(1, np.mean(Resp_Rew_based[Mat_CS1UR-1,1]),30, color='k')
-plt.errorbar(1, np.mean(Resp_Rew_based[Mat_CS1UR-1,1]),sem(Resp_Rew_based[Mat_CS1UR-1,1]),fmt='r', ecolor='k',elinewidth=2)
-plt.scatter(np.random.rand(len(Resp_Rew_based[Mat_CS2UR-1,1]))*0.1 - 0.05 + 2,Resp_Rew_based[Mat_CS2UR-1,1],color= [0, 0.7, 0, 0.2], label='CS2')
-plt.scatter(2, np.mean(Resp_Rew_based[Mat_CS2UR-1,1]),30, color='k')
-plt.errorbar(2, np.mean(Resp_Rew_based[Mat_CS2UR-1,1]),sem(Resp_Rew_based[Mat_CS2UR-1,1]),fmt='r', ecolor='k',elinewidth=2)
-plt.scatter(np.random.rand(len(Resp_Rew_based[Mat_CS3UR-1,1]))*0.1 - 0.05 + 3,Resp_Rew_based[Mat_CS3UR-1,1],color= [0, 0, 1, 0.2], label='CS3')
-plt.scatter(3, np.mean(Resp_Rew_based[Mat_CS3UR-1,1]),30, color='k')
-plt.errorbar(3, np.mean(Resp_Rew_based[Mat_CS3UR-1,1]),sem(Resp_Rew_based[Mat_CS3UR-1,1]),fmt='r', ecolor='k',elinewidth=2)
-plt.title('Omission resp')
-plt.axhline(y=0, color='gray', linestyle='--')
-plt.legend()
-plt.ylim([ymin[1],ymax[1]])
-plt.savefig(SaveDir + os.sep + 'omission_resp.pdf')
-
-#%% previously rewarded / not
-TrialTypeList=[]
-df_trialtype=df['TrialType']
-
-for ii in range(len(df_trialtype)):
-    if df_trialtype[ii] == 1:
-        TrialTypeList.append(1)
-    elif (df_trialtype[ii] > 1) & (df_trialtype[ii] <= 10):
-        TrialTypeList.append(2)
-    elif (df_trialtype[ii] > 10) & (df_trialtype[ii] <= 15):
-        TrialTypeList.append(3)      
-    elif (df_trialtype[ii] > 15) & (df_trialtype[ii] <= 20):
-        TrialTypeList.append(4) 
-    elif (df_trialtype[ii] > 20) & (df_trialtype[ii] <= 29):
-        TrialTypeList.append(5)       
-    elif df_trialtype[ii] == 30:
-        TrialTypeList.append(6)
-
-preR_CS1R=[]
-preUR_CS1R=[]
-preR_CS1UR=[]
-preUR_CS1UR=[]
-preR_CS2R=[]
-preUR_CS2R=[]
-preR_CS2UR=[]
-preUR_CS2UR=[]
-preR_CS3R=[]
-preUR_CS3R=[]
-preR_CS3UR=[]
-preUR_CS3UR=[]
-
-for ii in range(len(df_trialtype)-2):
-    if TrialTypeList[ii+1]==5:
-        if (TrialTypeList[ii]==1)or(TrialTypeList[ii]==3)or(TrialTypeList[ii]==5):
-            preR_CS3R.append(ii+1)
-        elif (TrialTypeList[ii]==2)or(TrialTypeList[ii]==4)or(TrialTypeList[ii]==6):
-            preUR_CS3R.append(ii+1)
-    elif TrialTypeList[ii+1]==6:
-        if (TrialTypeList[ii]==1)or(TrialTypeList[ii]==3)or(TrialTypeList[ii]==5):
-            preR_CS3UR.append(ii+1)
-        elif (TrialTypeList[ii]==2)or(TrialTypeList[ii]==4)or(TrialTypeList[ii]==6):
-            preUR_CS3UR.append(ii+1)    
-            
-# #%% Remove trial outside PSTH time limit
-# valid_CSall = [s for s in CSall if (s-100>=0 and s+300 < len(G_dF_F))]
-# invalid_idx = []
-
-# for i, s in enumerate(CSall):
-#     if not (s - 100 >= 0 and s + 300 < len(G_dF_F)):
-#         invalid_idx.append(i)
-
-# invalid_idx
-# preUR_CS3R=[]
+  
 #%% PLOT trial-by-trial quant
-Psth_G_CSall = PSTHmaker(G_dF_F*100, CSall, 100, 300)
-Psth_C_CSall = PSTHmaker(Ctrl_dF_F*100, CSall, 100, 300)
-Psth_G_CSall_base = PSTH_baseline(Psth_G_CSall, 100)
-Psth_C_CSall_base = PSTH_baseline(Psth_C_CSall, 100)
+
 
 for ROIii in Roi2Vis:
     #[ymin,ymax]=[-30,110]
     
     plt.figure(figsize=(10,5))    
-    plt.subplot(2,2,1)
-    PSTHplot(Psth_G_CSall_base[:,ROIii,preR_CS3R].T, "g", "darkgreen", "R")
-    PSTHplot(Psth_G_CSall_base[:,ROIii,preR_CS3UR].T, "m", "darkmagenta", "UR")
-    plt.axvspan(0, 1.0, color = [1, 0, 1, 0.4])
-    plt.axvspan(2.0, 2.5, color = [0, 0, 1, 0.4])
-    plt.grid(True)
-    plt.ylim([ymin[ROIii]*2.2,ymax[ROIii]*1.3])
-    plt.ylabel('dF/F %')
-    plt.xlabel('Time from reward (s)')
-    plt.title('ROI ' + str(ROIii) + ': preceded by R trial')
-    plt.legend(loc="upper left", fontsize=5)
-    
-    plt.subplot(2,2,2)
-    PSTHplot(Psth_G_CSall_base[:,ROIii,preUR_CS3R].T, "g", "darkgreen", "R")
-    PSTHplot(Psth_G_CSall_base[:,ROIii,preUR_CS3UR].T, "m", "darkmagenta", "UR")
-    plt.axvspan(0, 1.0, color = [1, 0, 1, 0.4])
-    plt.axvspan(2.0, 2.5, color = [0, 0, 1, 0.4])
-    plt.grid(True)
-    plt.ylim([ymin[ROIii]*2.2,ymax[ROIii]*1.3])
-    plt.ylabel('dF/F %')
-    plt.xlabel('Time from reward (s)')
-    plt.title('ROI ' + str(ROIii) + ': preceded by UR trial')
-    plt.legend(loc="upper left", fontsize=5)
+   
     
     #% Time from previous reward
     TimeFromPR = TSFramesdict['Reward']-np.roll(TSFramesdict['Reward'],1)
@@ -754,8 +533,8 @@ for ROIii in Roi2Vis:
     
     
     #plt.figure()
-    plt.subplot(2,2,3)
-    plt.scatter(TimeFromPR[CS3Rind[1:]],RewResp[CS3Rind[1:]],c=[0,0,1,0.5],label='CS3_Reward')
+    plt.subplot(1,2,1)
+    plt.scatter(TimeFromPR[1:],RewResp[1:],c=[0,0,1,0.5],label='Manual_Reward')
     plt.ylabel('dF/F %')
     plt.xlabel('Time from previous R (s)')
     plt.title('ROI ' + str(ROIii) + ': Response vs Time from previous R')
@@ -763,8 +542,8 @@ for ROIii in Roi2Vis:
     
     #% TrialN 
     #plt.figure()    
-    plt.subplot(2,2,4)
-    plt.plot(RewResp[CS3Rind[1:]], 'g')
+    plt.subplot(1,2,2)
+    plt.plot(RewResp, 'g')
     plt.ylabel('dF/F %')
     plt.xlabel('#Rewarded Trial')
     plt.title('ROI ' + str(ROIii) + ': Response across rewards')
@@ -774,7 +553,7 @@ for ROIii in Roi2Vis:
         )
     plt.subplots_adjust(hspace=0.55, wspace=0.15)
     
-    plt.savefig(SaveDir + os.sep + 'ROI-' + str(ROIii) + 'prev-trial_summary.pdf')
+    plt.savefig(SaveDir + os.sep + 'ROI-' + str(ROIii) + '_prev-trial_summary.pdf')
 
 #%% PLOT ReactionTime From reward
 
@@ -865,7 +644,7 @@ plt.subplot(2, 2, 1)
 #PSTHplot(Psth_R_RewardC_base[:,0,:].T, "darkred", "magenta", "red")
 PSTHplot(Psth_G_RewardC_base[:,0,:].T, "g", "darkgreen", "green")
 PSTHplot(Psth_C_RewardC_base[:,0,:].T, "k", "k", "isos")
-plt.ylim([ymin[0]*1.1, ymax[0]*1.1])
+plt.ylim([ymin[0]*1.3, ymax[0]*1.3])
 plt.xlim([-5,15])
 plt.grid(True)
 plt.title("ROI 0 Green: aligned reward response")
@@ -876,7 +655,7 @@ plt.subplot(2, 2, 2)
 PSTHplot(Psth_R_RewardC_base[:,0,:].T, "darkred", "magenta", "red")
 #PSTHplot(Psth_G_RewardC_base[:,0,:].T, "g", "darkgreen", "green")
 PSTHplot(Psth_C_RewardC_base[:,0,:].T, "k", "k", "isos")
-plt.ylim([ymin[0]*1.1, ymax[0]*1.1])
+plt.ylim([ymin[0]*1.3, ymax[0]*1.3])
 plt.xlim([-5,15])
 plt.grid(True)
 plt.title("ROI 0 Red: aligned reward response")
@@ -885,28 +664,28 @@ plt.axvspan(0, 2.5, color = [0, 0, 1, 0.2])
     
 
 
-# ROI 1:
-plt.subplot(2, 2, 3)
-#PSTHplot(Psth_R_RewardC_base[:,1,:].T, "darkred", "magenta", "red")
-PSTHplot(Psth_G_RewardC_base[:,1,:].T, "g", "darkgreen", "green")
-PSTHplot(Psth_C_RewardC_base[:,1,:].T, "k", "k", "isos")
-plt.ylim([ymin[0]*1.1, ymax[0]*1.1])
-plt.xlim([-5,15])
-plt.grid(True)
-plt.title("ROI 1 Green: aligned reward response")
-plt.xlabel('Time from reward delivery (s)')
-plt.axvspan(0, 2.5, color = [0, 0, 1, 0.2])
+# # ROI 1:
+# plt.subplot(2, 2, 3)
+# #PSTHplot(Psth_R_RewardC_base[:,1,:].T, "darkred", "magenta", "red")
+# PSTHplot(Psth_G_RewardC_base[:,1,:].T, "g", "darkgreen", "green")
+# PSTHplot(Psth_C_RewardC_base[:,1,:].T, "k", "k", "isos")
+# plt.ylim([ymin[0]*1.1, ymax[0]*1.1])
+# plt.xlim([-5,15])
+# plt.grid(True)
+# plt.title("ROI 1 Green: aligned reward response")
+# plt.xlabel('Time from reward delivery (s)')
+# plt.axvspan(0, 2.5, color = [0, 0, 1, 0.2])
     
-plt.subplot(2, 2, 4)
-PSTHplot(Psth_R_RewardC_base[:,1,:].T, "darkred", "magenta", "red")
-#PSTHplot(Psth_G_RewardC_base[:,1,:].T, "g", "darkgreen", "green")
-PSTHplot(Psth_C_RewardC_base[:,1,:].T, "k", "k", "isos")
-plt.ylim([ymin[0]*1.1, ymax[0]*1.1])
-plt.xlim([-5,15])
-plt.grid(True)
-plt.title("ROI 1 Red: aligned reward response")
-plt.xlabel('Time from reward delivery (s)')
-plt.axvspan(0, 2.5, color = [0, 0, 1, 0.2])
+# plt.subplot(2, 2, 4)
+# PSTHplot(Psth_R_RewardC_base[:,1,:].T, "darkred", "magenta", "red")
+# #PSTHplot(Psth_G_RewardC_base[:,1,:].T, "g", "darkgreen", "green")
+# PSTHplot(Psth_C_RewardC_base[:,1,:].T, "k", "k", "isos")
+# plt.ylim([ymin[0]*1.1, ymax[0]*1.1])
+# plt.xlim([-5,15])
+# plt.grid(True)
+# plt.title("ROI 1 Red: aligned reward response")
+# plt.xlabel('Time from reward delivery (s)')
+# plt.axvspan(0, 2.5, color = [0, 0, 1, 0.2])
 
 plt.tight_layout(
     # rect=[0, 0.03, 1, 0.95]
