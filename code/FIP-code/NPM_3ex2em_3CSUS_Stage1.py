@@ -35,7 +35,7 @@ import PreprocessingFunctions2 as pf
 # SaveDir=r''
 # AnalDir=r'...\behavior'
 
-session_id = 'FIP_836733_2025-11-26_10-37-59'
+session_id = 'FIP_836732_2025-11-26_09-46-26'
 
 SaveDir = r'C:\output_data\results\results_' + session_id
 AnalDir = r'C:\output_data' + os.sep + session_id + os.sep + 'behavior'
@@ -44,7 +44,7 @@ AnalDir = r'C:\output_data' + os.sep + session_id + os.sep + 'behavior'
 os.makedirs(SaveDir, exist_ok=True)
 
 # manually enter when the first reward trial that should actually be counted happened
-first_rew_idx = 2          #  2 for 836733 12/3/25
+first_rew_idx = 21          #  2 for 836733 12/3/25
                             # 21 for 836732 12/3/25
 
 # for visualization
@@ -661,17 +661,18 @@ for ii in range(len(df_trialtype)-2):
         elif (TrialTypeList[ii]==2)or(TrialTypeList[ii]==4)or(TrialTypeList[ii]==6):
             preUR_CS3UR.append(ii+1)    
             
-# #%% Remove trial outside PSTH time limit
-# valid_CSall = [s for s in CSall if (s-100>=0 and s+300 < len(G_dF_F))]
-# invalid_idx = []
+#%% Remove trial outside PSTH time limit
+valid_CSall = [s for s in CSall if (s-100>=0 and s+300 < len(G_dF_F))]
+invalid_idx = []
 
-# for i, s in enumerate(CSall):
-#     if not (s - 100 >= 0 and s + 300 < len(G_dF_F)):
-#         invalid_idx.append(i)
+for i, s in enumerate(CSall):
+    if not (s - 100 >= 0 and s + 300 < len(G_dF_F)):
+        invalid_idx.append(i)
 
-# invalid_idx
-# preUR_CS3R=[]
-#%% PLOT trial-by-trial quant
+invalid_idx
+preUR_CS3R = [x for x in preUR_CS3R if x not in invalid_idx]
+
+#%% PLOT trial-by-trial quant GREEN
 Psth_G_CSall = PSTHmaker(G_dF_F*100, CSall, 100, 300)
 Psth_C_CSall = PSTHmaker(Ctrl_dF_F*100, CSall, 100, 300)
 Psth_G_CSall_base = PSTH_baseline(Psth_G_CSall, 100)
@@ -690,7 +691,7 @@ for ROIii in Roi2Vis:
     plt.ylim([ymin[ROIii]*2.2,ymax[ROIii]*1.3])
     plt.ylabel('dF/F %')
     plt.xlabel('Time from reward (s)')
-    plt.title('ROI ' + str(ROIii) + ': preceded by R trial')
+    plt.title('ROI ' + str(ROIii) + ' Green: preceded by R trial')
     plt.legend(loc="upper left", fontsize=5)
     
     plt.subplot(2,2,2)
@@ -702,7 +703,7 @@ for ROIii in Roi2Vis:
     plt.ylim([ymin[ROIii]*2.2,ymax[ROIii]*1.3])
     plt.ylabel('dF/F %')
     plt.xlabel('Time from reward (s)')
-    plt.title('ROI ' + str(ROIii) + ': preceded by UR trial')
+    plt.title('ROI ' + str(ROIii) + ' Green: preceded by UR trial')
     plt.legend(loc="upper left", fontsize=5)
     
     #% Time from previous reward
@@ -758,7 +759,7 @@ for ROIii in Roi2Vis:
     plt.scatter(TimeFromPR[CS3Rind[1:]],RewResp[CS3Rind[1:]],c=[0,0,1,0.5],label='CS3_Reward')
     plt.ylabel('dF/F %')
     plt.xlabel('Time from previous R (s)')
-    plt.title('ROI ' + str(ROIii) + ': Response vs Time from previous R')
+    plt.title('ROI ' + str(ROIii) + ' Green: Response vs Time from previous R')
     plt.legend()
     
     #% TrialN 
@@ -767,14 +768,121 @@ for ROIii in Roi2Vis:
     plt.plot(RewResp[CS3Rind[1:]], 'g')
     plt.ylabel('dF/F %')
     plt.xlabel('#Rewarded Trial')
-    plt.title('ROI ' + str(ROIii) + ': Response across rewards')
+    plt.title('ROI ' + str(ROIii) + ' Green: Response across rewards')
     
     plt.tight_layout(
         # rect=[0, 0.03, 1, 0.95]
         )
     plt.subplots_adjust(hspace=0.55, wspace=0.15)
     
-    plt.savefig(SaveDir + os.sep + 'ROI-' + str(ROIii) + 'prev-trial_summary.pdf')
+    plt.savefig(SaveDir + os.sep + 'ROI-' + str(ROIii) + '-green_prev-trial_summary.pdf')
+
+
+
+#%% PLOT trial-by-trial quant RED
+Psth_R_CSall = PSTHmaker(R_dF_F*100, CSall, 100, 300)
+Psth_C_CSall = PSTHmaker(Ctrl_dF_F*100, CSall, 100, 300)
+Psth_R_CSall_base = PSTH_baseline(Psth_R_CSall, 100)
+Psth_C_CSall_base = PSTH_baseline(Psth_C_CSall, 100)
+
+for ROIii in Roi2Vis:
+    #[ymin,ymax]=[-30,110]
+    
+    plt.figure(figsize=(10,5))    
+    plt.subplot(2,2,1)
+    PSTHplot(Psth_R_CSall_base[:,ROIii,preR_CS3UR].T, "m", "darkmagenta", "UR")
+    PSTHplot(Psth_R_CSall_base[:,ROIii,preR_CS3R].T, "r", "red", "R")
+    plt.axvspan(0, 1.0, color = [1, 0, 1, 0.4])
+    plt.axvspan(2.0, 2.5, color = [0, 0, 1, 0.4])
+    plt.grid(True)
+   # plt.ylim([ymin[ROIii]*2.2,ymax[ROIii]*1.3])
+    plt.ylabel('dF/F %')
+    plt.xlabel('Time from reward (s)')
+    plt.title('ROI ' + str(ROIii) + ' Red: preceded by R trial')
+    plt.legend(loc="upper left", fontsize=5)
+    
+    plt.subplot(2,2,2)
+    PSTHplot(Psth_R_CSall_base[:,ROIii,preUR_CS3UR].T, "m", "darkmagenta", "UR")
+    PSTHplot(Psth_R_CSall_base[:,ROIii,preUR_CS3R].T, "r", "red", "R")
+    plt.axvspan(0, 1.0, color = [1, 0, 1, 0.4])
+    plt.axvspan(2.0, 2.5, color = [0, 0, 1, 0.4])
+    plt.grid(True)
+  #  plt.ylim([ymin[ROIii]*2.2,ymax[ROIii]*1.3])
+    plt.ylabel('dF/F %')
+    plt.xlabel('Time from reward (s)')
+    plt.title('ROI ' + str(ROIii) + ' Red: preceded by UR trial')
+    plt.legend(loc="upper left", fontsize=5)
+    
+    #% Time from previous reward
+    TimeFromPR = TSFramesdict['Reward']-np.roll(TSFramesdict['Reward'],1)
+    TimeFromPR = TimeFromPR/sampling_rate # in seconds
+    
+    RewResp=np.empty(len(TSFramesdict['Reward']))
+    RewResp_base=np.empty(len(TSFramesdict['Reward']))
+    
+    TC=R_dF_F*100
+    
+    # for ii in range(len(TSFramesdict['Reward'])):
+    #     RewResp[ii]=np.mean(TC[int(TSFramesdict['Reward'][ii]):int(TSFramesdict['Reward'][ii])+60, 1])
+    #     RewResp_base[ii]=RewResp[ii] - np.mean(TC[int(TSFramesdict['Reward'][ii]-80):int(TSFramesdict['Reward'][ii])-40, 1])
+   
+    # Replaced Kenta's code (above, commented out) with this since original code
+    # didn't calculate RewResp for each ROI separately.
+    TC_col = TC[:, ROIii]
+    for ii, reward_frame in enumerate(TSFramesdict['Reward']):
+        reward_frame = int(reward_frame)
+    
+        # Mean response in 60-frame window after reward
+        RewResp[ii] = np.mean(TC_col[reward_frame : reward_frame + 60])
+    
+        # Baseline: mean of 40-frame window 80–40 frames before reward
+        baseline = np.mean(TC_col[reward_frame - 80 : reward_frame - 40])
+    
+        # Baseline-corrected response
+        RewResp_base[ii] = RewResp[ii] - baseline
+    
+   
+    
+    '''
+    plt.figure()    
+    plt.scatter(TimeFromPR[1:],RewResp[1:])
+    #plt.scatter(TimeFromPR[1:],RewResp_base[1:])
+    plt.ylabel('dF/F %')
+    plt.xlabel('Time from previous R (s)')
+    '''
+   
+    # Rall=np.sort(np.hstack([Mat_CS3R]))
+    # CS3Rind=np.where(np.isin(Rall, Mat_CS3R))[0]
+    
+    CS3RewFrames = CS3Frames + 40
+    tolerance = 5 
+    diff_frames = np.abs(RewardFrames[:, None] - CS3RewFrames[None, :])
+    mask = np.any(diff_frames <= tolerance, axis=1)
+    CS3Rind = np.where(mask)[0]
+    
+    
+    #plt.figure()
+    plt.subplot(2,2,3)
+    plt.scatter(TimeFromPR[CS3Rind[1:]],RewResp[CS3Rind[1:]],c=[0,0,1,0.5],label='CS3_Reward')
+    plt.ylabel('dF/F %')
+    plt.xlabel('Time from previous R (s)')
+    plt.title('ROI ' + str(ROIii) + ' Red: Response vs Time from previous R')
+    plt.legend()
+    
+    #% TrialN 
+    #plt.figure()    
+    plt.subplot(2,2,4)
+    plt.plot(RewResp[CS3Rind[1:]], 'r')
+    plt.ylabel('dF/F %')
+    plt.xlabel('#Rewarded Trial')
+    plt.title('ROI ' + str(ROIii) + ' Red: Response across rewards')
+    
+    plt.tight_layout(
+        # rect=[0, 0.03, 1, 0.95]
+        )
+    plt.subplots_adjust(hspace=0.55, wspace=0.15)
+    
+    plt.savefig(SaveDir + os.sep + 'ROI-' + str(ROIii) + '-red_prev-trial_summary.pdf')
 
 #%% PLOT ReactionTime From reward
 
@@ -865,7 +973,7 @@ plt.subplot(2, 2, 1)
 #PSTHplot(Psth_R_RewardC_base[:,0,:].T, "darkred", "magenta", "red")
 PSTHplot(Psth_G_RewardC_base[:,0,:].T, "g", "darkgreen", "green")
 PSTHplot(Psth_C_RewardC_base[:,0,:].T, "k", "k", "isos")
-plt.ylim([ymin[0]*1.1, ymax[0]*1.1])
+plt.ylim([ymin[0]*1.1, ymax[0]*1.3])
 plt.xlim([-5,15])
 plt.grid(True)
 plt.title("ROI 0 Green: aligned reward response")
@@ -876,7 +984,7 @@ plt.subplot(2, 2, 2)
 PSTHplot(Psth_R_RewardC_base[:,0,:].T, "darkred", "magenta", "red")
 #PSTHplot(Psth_G_RewardC_base[:,0,:].T, "g", "darkgreen", "green")
 PSTHplot(Psth_C_RewardC_base[:,0,:].T, "k", "k", "isos")
-plt.ylim([ymin[0]*1.1, ymax[0]*1.1])
+plt.ylim([ymin[0]*1.1, ymax[0]*1.3])
 plt.xlim([-5,15])
 plt.grid(True)
 plt.title("ROI 0 Red: aligned reward response")
@@ -890,7 +998,7 @@ plt.subplot(2, 2, 3)
 #PSTHplot(Psth_R_RewardC_base[:,1,:].T, "darkred", "magenta", "red")
 PSTHplot(Psth_G_RewardC_base[:,1,:].T, "g", "darkgreen", "green")
 PSTHplot(Psth_C_RewardC_base[:,1,:].T, "k", "k", "isos")
-plt.ylim([ymin[0]*1.1, ymax[0]*1.1])
+plt.ylim([ymin[0]*1.1, ymax[0]*1.3])
 plt.xlim([-5,15])
 plt.grid(True)
 plt.title("ROI 1 Green: aligned reward response")
@@ -901,7 +1009,7 @@ plt.subplot(2, 2, 4)
 PSTHplot(Psth_R_RewardC_base[:,1,:].T, "darkred", "magenta", "red")
 #PSTHplot(Psth_G_RewardC_base[:,1,:].T, "g", "darkgreen", "green")
 PSTHplot(Psth_C_RewardC_base[:,1,:].T, "k", "k", "isos")
-plt.ylim([ymin[0]*1.1, ymax[0]*1.1])
+plt.ylim([ymin[0]*1.1, ymax[0]*1.3])
 plt.xlim([-5,15])
 plt.grid(True)
 plt.title("ROI 1 Red: aligned reward response")

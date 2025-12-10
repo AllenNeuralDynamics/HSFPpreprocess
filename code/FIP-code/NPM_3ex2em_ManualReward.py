@@ -554,6 +554,9 @@ for ROIii in Roi2Vis:
     plt.subplots_adjust(hspace=0.55, wspace=0.15)
     
     plt.savefig(SaveDir + os.sep + 'ROI-' + str(ROIii) + '_prev-trial_summary.pdf')
+    
+
+
 
 #%% PLOT ReactionTime From reward
 
