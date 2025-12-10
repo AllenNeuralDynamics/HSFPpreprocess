@@ -696,3 +696,79 @@ plt.tight_layout(
 plt.subplots_adjust(hspace=0.5, wspace=0.15)
 
 plt.savefig(SaveDir + os.sep + 'reward_aligned_response.pdf')
+
+
+
+
+#%% Messing around, larger plot labels
+
+plt.figure(figsize=(6, 2))
+
+for ii_ROI in range(len(Roi2Vis)):
+    plt.plot(time_seconds, Ctrl_dF_F[:,Roi2Vis[ii_ROI]]*100 - ii_ROI*100, 'blue')
+    plt.plot(time_seconds, G_dF_F[:,Roi2Vis[ii_ROI]]*100 - ii_ROI*100, 'green')
+    plt.plot(time_seconds, R_dF_F[:,Roi2Vis[ii_ROI]]*100 - ii_ROI*100, 'magenta')
+    plt.plot(time_seconds, np.zeros(len(time_seconds))-ii_ROI*100,'--k')
+    
+plt.plot(LickFrames/20, np.ones(len(LickFrames))*100, marker=3, markersize=10, color=[0, 0, 0, 0.5] ,label='Lick')
+
+plt.xlabel('Time (seconds)', fontsize=12)
+plt.ylabel('dF/F (%)')
+plt.title("SubjectID: " + subjectID + "  Date: " + os.path.basename(os.path.dirname(AnalDir)))
+plt.xlim([0, time_seconds[-1]])
+plt.grid(True)
+
+
+for ii in range(len(RewardFrames)):
+    plt.axvspan(RewardFrames[ii]/20, RewardFrames[ii]/20 + StimPeriod, color = [0, 0, 1, 0.4])
+
+for ii in range(len(CS1Frames)):
+    plt.axvspan(CS1Frames[ii]/20, CS1Frames[ii]/20 + 1, color = [1, 0, 0, 0.4])
+
+for ii in range(len(CS2Frames)):
+    plt.axvspan(CS2Frames[ii]/20, CS2Frames[ii]/20 + 1, color = [0, 1, 0, 0.4]) 
+
+for ii in range(len(CS3Frames)):
+    plt.axvspan(CS3Frames[ii]/20, CS3Frames[ii]/20 + 1, color = [1, 0, 1, 0.4]) 
+
+plt.axvspan(RewardFrames[0]/20, RewardFrames[0]/20, color = [0, 0, 1, 0.4],label='Reward')
+
+#%% larger plot labels
+plt.figure(figsize=(6,2))
+
+    
+for ii in range(len(Roi2Vis)):
+    plt.subplot(1, 2, 1)
+    PSTHplot(Psth_G_ManRew_base[:,Roi2Vis[ii],:].T, "g", "darkgreen", "R+")
+   # PSTHplot(Psth_C_ManRew_base[:,Roi2Vis[ii],:].T, "b", "darkblue", "Iso_R+")
+    # PSTHplot(Psth_G_CS3UR_base[:,Roi2Vis[ii],:].T, "m", "darkmagenta", "R-")
+    # PSTHplot(Psth_C_CS3UR_base[:,Roi2Vis[ii],:].T, "k", "k", "Iso_R-")    
+    plt.ylim([ymin[ii]*1.1, ymax[ii]*1.1])
+    plt.xlim([-5,15])
+    plt.grid(True)
+    plt.title("GRAB-DA3m - reward aligned")
+    plt.xlabel('Time - Tone (s)')
+   # plt.axvspan(0, 2.5, color = [1, 0, 1, 0.4])
+    plt.axvspan(0, 2.5, color = [0, 0, 1, 0.4])
+    
+
+    plt.subplot(1, 2, 2)
+    PSTHplot(Psth_R_ManRew_base[:,Roi2Vis[ii],:].T, "m", "magenta", "R+")
+  # PSTHplot(Psth_C_ManRew_base[:,Roi2Vis[ii],:].T, "b", "darkblue", "Iso_R+")
+    # PSTHplot(Psth_R_CS3UR_base[:,Roi2Vis[ii],:].T, "m", "darkmagenta", "R-")
+    # PSTHplot(Psth_C_CS3UR_base[:,Roi2Vis[ii],:].T, "k", "k", "Iso_R-")    
+    plt.ylim([ymin[ii]*1.1, ymax[ii]*1.1])
+   # plt.ylim([-5, 5])
+    plt.xlim([-5,15])
+    plt.grid(True)
+    plt.title("D1-MSN OCaMP - reward aligned")
+    plt.xlabel('Time - Tone (s)')
+    plt.ylabel('dF/F%')
+  #  plt.axvspan(0, 1.0, color = [1, 0, 1, 0.4])
+    plt.axvspan(0, 2.5, color = [0, 0, 1, 0.4])
+    
+    
+    plt.tight_layout(
+        # rect=[0, 0.03, 1, 0.95]
+        )
+ #   plt.subplots_adjust(hspace=2.0, wspace=3.4)
