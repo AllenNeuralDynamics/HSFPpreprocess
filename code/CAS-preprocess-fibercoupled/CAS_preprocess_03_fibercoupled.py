@@ -12,10 +12,11 @@ import pandas as pd
 from typing import List, Tuple
 from natsort import natsorted
 import ast
+import matplotlib.pyplot as plt
 
 #%% variables/constants
 # store the session id
-session_id = 'BigTiffs2025-02-20T11_08_27.6009600-08_00'
+session_id = 'HSFP_775510_2025-02-20_11-08-27'
 
 #%% functions
 def _correct_16bit_rollover(framestamps: np.ndarray, modulo: int = 2**16) -> tuple[np.ndarray, int]:
@@ -126,6 +127,42 @@ def load_session_params(
 
 
 
+def check_dropped_frames(frames,times):
+    """
+    frames: np.ndarray of corrected framestamps
+    times: np.ndarray of camera timestamps
+    """
+    # Calculate the jump between consecutive frames
+    # diff[i] = frames[i+1] - frames[i]
+    jumps = np.diff(frames)
+    
+    # Find where the jump is not 1
+    drop_indices = np.where(jumps > 1)[0]
+    
+    if len(drop_indices) == 0:
+        print("No dropped frames detected.")
+        return
+    
+    for idx in drop_indices:
+        drop_count = jumps[idx] - 1
+        drop_time = times[idx]
+        print(f"DROPPED {drop_count} frame(s) at time {drop_time:.3f}s (Index: {idx})")
+        return drop_count, drop_time
+
+
+def plot_timing_diagnostics(times):
+    ifi = np.diff(times) * 1000  # Convert to milliseconds
+    
+    plt.figure(figsize=(10, 4))
+    plt.plot(ifi, label='Inter-Frame Interval')
+    plt.axhline(y=np.median(ifi), color='r', linestyle='--', label='Median IFI')
+    plt.xlabel('Frame Index')
+    plt.ylabel('Time Delta (ms)')
+    plt.title('Timing Stability (Jitter Analysis)')
+    plt.legend()
+    plt.show()
+    
+    
 
 def load_calib_values(calib_file, Xoffset, Yoffset):
     # Safe parsing of calibration.txt
@@ -213,3 +250,4 @@ if __name__ == "__main__":
     # load calibration.txt values
     theta_r, pt1, pt2, pt3, pt4, pt5, pt6, fiber1_location, fiber2_location = load_calib_values(calib_file, Xoffset, Yoffset)    
     
+#%%

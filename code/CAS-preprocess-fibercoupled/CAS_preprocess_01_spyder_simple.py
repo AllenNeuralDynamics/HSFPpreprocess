@@ -43,11 +43,11 @@ import CAS_preprocess_01_fibercoupled as unskew_image
 warnings.filterwarnings("ignore")
 
 #%% variables
-SAT_VAL = 12000 # saturation value of camera (Smrithi: 12000, Carrie: 7000)
-FIBER_WIDTH = 60 # width of fiber in pixels (Smrithi: 60, Carrie: 40)
-USE_LASER_1 = 1 # first laser used for calculating affine transformation (Smrithi: 1, Carrie: 0)
-USE_LASER_2 = 2 # second laser used for calculating affine transformation (Smrithi: 2, Carrie: 2)
-DISTANCE = 100 # distance between peaks used to find the lasers (Smrithi: 100, Carrie: 50)
+SAT_VAL = 12000 # saturation value of camera (Smrithi: 12000, fiber-coupled: 7000)
+FIBER_WIDTH = 60 # width of fiber in pixels (Smrithi: 60, fiber-coupled: 40)
+USE_LASER_1 = 1 # 1st laser used to calculate affine transformation (Smrithi: 1, fiber-coupled: 0)
+USE_LASER_2 = 2 # 2nd laser used to calculate affine transformation (Smrithi: 2, fiber-coupled: 2)
+DISTANCE = 100 # distance between peaks used to find the laser edges (Smrithi: 100, fiber-coupled: 50)
 
 # store the session id
 session_id = "HSFP_775510_2025-02-20_11-08-27"
@@ -145,7 +145,7 @@ v_peaks_final = v_peaks_final.astype(int)
 
 fiber1, fiber2 = unskew_image.store_fiber_boundaries(img_final, h_peaks_final, use_laser=USE_LASER_2, sat_val=SAT_VAL)
 
-#%% save results
+#%% adjust transformation points with X and Y offsets
 pt1[0] = int(pt1[0] + Xoffset)
 pt2[0] = int(pt2[0] + Xoffset)
 pt3[0] = int(pt3[0] + Xoffset)
@@ -163,7 +163,7 @@ fiber1[1] = int(fiber1[1] + Yoffset)
 fiber2[0] = int(fiber2[0] + Yoffset)
 fiber2[1] = int(fiber2[1] + Yoffset)
 
-#create a path to the calibration files
+#%% save results
 results_path = os.path.join(path, 'fib')
 results_dir = Path(results_path)
 unskew_image.save_results(img_final, theta_r, [pt1, pt2, pt3, pt4, pt5, pt6], [fiber1, fiber2], Xoffset, Yoffset, results_dir)

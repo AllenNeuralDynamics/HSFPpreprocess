@@ -49,6 +49,7 @@ import h5py
 import ast
 from PIL import Image
 from pathlib import Path
+import logging
 import CAS_preprocess_03_fibercoupled as tiff_to_intensity
 
 # %% variables
@@ -70,19 +71,28 @@ if not calib_file.exists():
 
 
 #%% load session_params.csv and fix framestamp rollover
-num_frames, times, frames, metadata_files = tiff_to_intensity.load_session_params(results_dir)
+num_frames, times_raw, frames_raw, metadata_files = tiff_to_intensity.load_session_params(results_dir)
 
+# identify the session param files that were found in the folder, there should be 1 per recording
 print("Processed CSV files (in order):")
 for p in metadata_files:
     print("  -", p.name)
 
 print("\nnumber of frames per recording fragment:", num_frames)
-for i, (t, f) in enumerate(zip(times, frames)):
+for i, (t, f) in enumerate(zip(times_raw, frames_raw)):
     print(f"\nRecording {i}:")
     #print(f"  time: array length = {t.size}, example [-5:] = {t[-5:]}")
     print(f"  Frames (corrected): length = {f.size}, example [-5:] = {f[-5:]}")
 
 
+#%% check for dropped frames
+for i, (f_arr, t_arr) in enumerate(zip(frames_raw, times_raw)):
+    print(f"\nChecking frame drops for recording {i}:")
+    tiff_to_intensity.check_dropped_frames(f_arr,t_arr)
+    tiff_to_intensity.plot_timing_diagnostics(t_arr)
+    
+    
+    
 #%% read in camera dimensions and offsets, convert to integers
 metadata = pd.read_csv(metadata_files[0])
 width = metadata.Width[0]
@@ -115,83 +125,117 @@ pts2 = np.float32([pt4, pt5, pt6])
 M2 = cv.getAffineTransform(pts1,pts2)
 
 
+#%% extract data from tiff stacks
+# Configure logging to track alignment issues
+logging.basicConfig(level=logging.INFO)
 
+# initialize storage lists
+fiber1_data = []
+fiber2_data = []
+peak_data = []
+meta_frame_counts = []
+tiff_frame_counts = []
 
+# get the tiff directories
+files = os.listdir(results_dir)
+print(files)
 
+# Put all directories containing 'Tiff' into 'folders'
+folders = natsorted([f for f in results_dir.iterdir() if f.is_dir() and f.name.startswith('Tiffs')])
+print(folders)
 
+# loop over all tiff folders:
+for i, folder_path in enumerate(folders):
+    # 1. Gather all TIFFs in this recording fragment
+    tiff_files = natsorted(list(folder_path.glob('*.tif*')))
+    total_tiffs = 0
 
+    # 2. Calculate total frames available in images
+    for tiff_p in tiff_files:
+        with Image.open(tiff_p) as img:
+            total_tiffs += img.n_frames
+    
+    # Store counts using append
+    tiff_frame_counts.append(total_tiffs - 1) # count all EXCEPT last tiff frame, to match metadata trim done earlier
+    meta_frame_counts.append(len(frames[i]))
+            
+   # Print diagnostic for this segment
+    print(f"Segment {i} ({folder_path.name}):")
+    print(f"  Metadata: {meta_frame_counts[i]} frames")
+    print(f"  TIFFs:    {tiff_frame_counts[i]} frames")
+    
+    if tiff_frame_counts[i] != meta_frame_counts[i]:
+        print(f"WARNING: Frame count mismatch detected! Using minimum: {min(tiff_frame_counts[i], meta_frame_counts[i])}")
 
 
 
 
 #%% 
-numFrames = np.zeros(len(metadata_files), dtype=int) # store the number of frames in each metadata file
-time = [] # initialize to store camera timestamps
-Frames = [] # initialize to store corrected framestamps after handling rollovers
+# numFrames = np.zeros(len(metadata_files), dtype=int) # store the number of frames in each metadata file
+# time = [] # initialize to store camera timestamps
+# Frames = [] # initialize to store corrected framestamps after handling rollovers
 
-# Helper: build unified timestamps from available columns
-def build_timestamps(df: pd.DataFrame) -> np.ndarray:
-    cols = df.columns
-    if {"CameraTimestampSeconds", "CameraTimestampMicroSeconds"}.issubset(cols):
-        ts = df["CameraTimestampSeconds"].astype("float64") \
-             + df["CameraTimestampMicroSeconds"].astype("float64") * 1e-6
-    elif "CameraTimestamp" in cols:
-        ts = df["CameraTimestamp"].astype("float64")
-    else:
-        raise KeyError("Metadata missing timestamp columns: expected either "
-                       "('CameraTimestampSeconds' + 'CameraTimestampMicroSeconds') or 'CameraTimestamp'.")
-    return ts.to_numpy()
+# # Helper: build unified timestamps from available columns
+# def build_timestamps(df: pd.DataFrame) -> np.ndarray:
+#     cols = df.columns
+#     if {"CameraTimestampSeconds", "CameraTimestampMicroSeconds"}.issubset(cols):
+#         ts = df["CameraTimestampSeconds"].astype("float64") \
+#              + df["CameraTimestampMicroSeconds"].astype("float64") * 1e-6
+#     elif "CameraTimestamp" in cols:
+#         ts = df["CameraTimestamp"].astype("float64")
+#     else:
+#         raise KeyError("Metadata missing timestamp columns: expected either "
+#                        "('CameraTimestampSeconds' + 'CameraTimestampMicroSeconds') or 'CameraTimestamp'.")
+#     return ts.to_numpy()
 
-# Helper: correct 16-bit framestamp rollover
-def correct_framestamps(df: pd.DataFrame) -> np.ndarray:    # input = pandas df, output = numpy array
-    if "Framestamp" not in df.columns:
-        raise KeyError("Metadata missing 'Framestamp' column.")
+# # Helper: correct 16-bit framestamp rollover
+# def correct_framestamps(df: pd.DataFrame) -> np.ndarray:    # input = pandas df, output = numpy array
+#     if "Framestamp" not in df.columns:
+#         raise KeyError("Metadata missing 'Framestamp' column.")
 
-    # Use uint32 to store raw counter safely, then int64 for corrected indices
-    fs = df["Framestamp"].to_numpy(dtype=np.uint32)
-    fs_signed = fs.astype(np.int64) # convert to signed type before calculating diffs
-    # Detect rollovers: when the counter decreases from one frame to the next
-    # Example: [..., 65535, 0, 1, ...] -> np.diff < 0 at the rollover boundary
-    diffs = np.diff(fs_signed)
-    rollover_points = np.r_[False, diffs < 0]           # prepend False for the first frame
-    rollover_count = np.cumsum(rollover_points).astype(np.int64)
+#     # Use uint32 to store raw counter safely, then int64 for corrected indices
+#     fs = df["Framestamp"].to_numpy(dtype=np.uint32)
+#     fs_signed = fs.astype(np.int64) # convert to signed type before calculating diffs
+#     # Detect rollovers: when the counter decreases from one frame to the next
+#     # Example: [..., 65535, 0, 1, ...] -> np.diff < 0 at the rollover boundary
+#     diffs = np.diff(fs_signed)
+#     rollover_points = np.r_[False, diffs < 0]           # prepend False for the first frame
+#     rollover_count = np.cumsum(rollover_points).astype(np.int64)
 
-    # Each rollover adds 65536 to subsequent frames
-    fs_corrected = fs.astype(np.int64) + rollover_count * 65536
+#     # Each rollover adds 65536 to subsequent frames
+#     fs_corrected = fs.astype(np.int64) + rollover_count * 65536
 
-    return fs_corrected
+#     return fs_corrected
 
-# Main loop over metadata files
-for i, meta_path in enumerate(metadata_files):
-    # pandas can read Path objects directly
-    metadata = pd.read_csv(meta_path)
+# # Main loop over metadata files
+# for i, meta_path in enumerate(metadata_files):
+#     # pandas can read Path objects directly
+#     metadata = pd.read_csv(meta_path)
 
-    # Count frames (rows) robustly
-    numFrames[i] = int(metadata.shape[0])
+#     # Count frames (rows) robustly
+#     numFrames[i] = int(metadata.shape[0])
 
-    # Build timestamps and corrected framestamps
-    ts = build_timestamps(metadata)
-    fs_corr = correct_framestamps(metadata)
+#     # Build timestamps and corrected framestamps
+#     ts = build_timestamps(metadata)
+#     fs_corr = correct_framestamps(metadata)
 
-    time.append(ts)
-    Frames.append(fs_corr)
+#     time.append(ts)
+#     Frames.append(fs_corr)
 
-# (Optional) Sanity checks/diagnostics
-print(f"Read {len(metadata_files)} metadata file(s).")
-print("Frames per file:", numFrames.tolist())
+# # (Optional) Sanity checks/diagnostics
+# print(f"Read {len(metadata_files)} metadata file(s).")
+# print("Frames per file:", numFrames.tolist())
 
-# Example: show detected rollovers per file
-rollovers_per_file = []
+# # Example: show detected rollovers per file
+# rollovers_per_file = []
 
-for i, meta_path in enumerate(metadata_files):
-    md = pd.read_csv(meta_path)
-    fs_i = md["Framestamp"].astype(np.int64).to_numpy()
-    diffs = np.diff(fs_i)
-    rollover_points = diffs < 0
-    rollovers_per_file.append(int(rollover_points.sum()))  # number of True values
-print("Detected rollovers per file:", rollovers_per_file)
-
-
+# for i, meta_path in enumerate(metadata_files):
+#     md = pd.read_csv(meta_path)
+#     fs_i = md["Framestamp"].astype(np.int64).to_numpy()
+#     diffs = np.diff(fs_i)
+#     rollover_points = diffs < 0
+#     rollovers_per_file.append(int(rollover_points.sum()))  # number of True values
+# print("Detected rollovers per file:", rollovers_per_file)
 
 
 
@@ -204,31 +248,18 @@ print("Detected rollovers per file:", rollovers_per_file)
 
 
 
-# %% # Unskew image - rotation followed by affine transformation
-
-# Read from calibration.txt
-with open(calib_file, 'r') as f: # open calibration.txt generated in preprocess_01
-    for line in f:
-        name, value = line.strip().split(' = ') # split each line at = into name and then value
-        exec(f'{name} = {value}') #
-
-# Read from above txt file after running preprocess_01_unskewimage
-# Adjust pts from affine transformation based on the X and Y offset of the camera for this recording
-theta_r = rot_tform_thetaR
-pt1 = [aff_tform_pt1[0]-Xoffset, aff_tform_pt1[1]-Yoffset] 
-pt2 = [aff_tform_pt2[0]-Xoffset, aff_tform_pt2[1]-Yoffset] 
-pt3 = [aff_tform_pt3[0]-Xoffset, aff_tform_pt3[1]-Yoffset] 
-pt4 = [aff_tform_pt4[0]-Xoffset, aff_tform_pt4[1]-Yoffset] 
-pt5 = [aff_tform_pt5[0]-Xoffset, aff_tform_pt5[1]-Yoffset] 
-pt6 = [aff_tform_pt6[0]-Xoffset, aff_tform_pt6[1]-Yoffset]
-fiber1_location = [fiber1_pixels[1]-Yoffset,fiber1_pixels[0]-Yoffset]
-fiber2_location = [fiber2_pixels[1]-Yoffset,fiber2_pixels[0]-Yoffset]
-
-fiber1_location = [int(x) for x in fiber1_location]
-fiber2_location = [int(x) for x in fiber2_location]
 
 
- 
+
+
+
+
+
+
+
+
+
+
 # %% Get all Tiff directories
 files = os.listdir(results_dir)
 print(files)

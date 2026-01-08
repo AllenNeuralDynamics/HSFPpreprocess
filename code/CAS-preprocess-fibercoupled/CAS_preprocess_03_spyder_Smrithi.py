@@ -19,9 +19,9 @@ import cv2 as cv
 import h5py
 from PIL import Image
 from pathlib import Path
-#%%
+#%% correct bit rollover
 # store the session id
-session_id = 'HSFP_836732_2025-12-03_10-23-42'
+session_id = 'HSFP_775510_2025-02-20_11-08-27'
 
 data_dir =Path("C:/output_data") # NEED TO CORRECT FOR CODE OCEAN
 path = data_dir / session_id
@@ -129,7 +129,7 @@ for entry in os.scandir(results_dir):
 folders = natsorted(folders)
 print(folders)
 
-# Read through each Tiff directory, extract tiff files, and unskew images
+# %% Read through each Tiff directory, extract tiff files, and unskew images
 fiber1 = []
 fiber2 = []
 peaks = []
@@ -171,7 +171,7 @@ for i in range(len(folders)):
                 max_peak = np.argmax(fiber2_m[temp_peak])
                 temp_peak = temp_peak[max_peak]
             
-            if frame==999 and (temp_peak is None or len(temp_peak) == 0):
+            if frame==999 and (temp_peak is None):
                 temp_peak = np.nan
             # print(temp_peak)
             # Use if running mouse with tdTomato
@@ -210,7 +210,7 @@ c = pd.read_hdf(results_dir/'pixel_to_nm.hdf5', key='Camera_pixel', more='r')
 w = pd.read_hdf(results_dir/'pixel_to_nm.hdf5', key='Wavelength_nm', more='r')
 wavelength = w.to_numpy()
 camera_px = c.to_numpy()
-lasers = [405,445,488,514,561]
+lasers = [405,445,473,514,561]
 
 laser_order = []
 for i in range(len(peaks)):

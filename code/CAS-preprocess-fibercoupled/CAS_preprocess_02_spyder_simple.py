@@ -36,8 +36,14 @@ import ast
 import CAS_preprocess_02_fibercoupled as pixel_to_nm
 
 #%% variables
-# Lasers used for calibration
-lasers = np.array([0.561, 0.514, 0.488, 0.445, 0.405])
+# Lasers used for calibration V1: original HSFP free-space rig
+lasers = np.array([0.561, 0.514, 0.473, 0.445, 0.405])
+
+# Lasers used for calibration V2: modified HSFP fiber-coupled rig 561
+#lasers = np.array([0.561, 0.514, 0.488, 0.445, 0.405])
+
+# Lasers used for calibration V3: modified HSFP fiber-coupled rig 594
+#lasers = np.array([0.594, 0.514, 0.488, 0.445, 0.405])
 
 session_id = "HSFP_775510_2025-02-20_11-08-27" # NEED TO CORRECT FOR CODE OCEAN
 
@@ -65,7 +71,7 @@ calib_image = results_dir / 'CalibrationImage.tiff'
 calib_file = results_dir / 'calibration.txt'
 
 # find pixels corresponding to center position of each laser
-laser_pix = pixel_to_nm.find_laser_pixels(calib_image, height_thresh=4000, dist_thresh=DISTANCE)
+laser_pix = pixel_to_nm.find_laser_pixels(calib_image, height_thresh=4000, dist_thresh=DISTANCE, sat_val=SAT_VAL)
 
 #%% optimization function (return pixel value given angle of deviation as input)
 popt, theta_D = pixel_to_nm.fit_wavelength_to_pixels(lasers, laser_pix)

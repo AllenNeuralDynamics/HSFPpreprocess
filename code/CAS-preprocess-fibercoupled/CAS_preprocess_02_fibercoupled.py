@@ -46,7 +46,7 @@ def linear_wave(x, a, b):
 
 
 # Calibration image helper function
-def find_laser_pixels(image_path, height_thresh=2000, dist_thresh=50):
+def find_laser_pixels(image_path, height_thresh=2000, dist_thresh=50, sat_val=SAT_VAL):
     """Find x-pixel positions of laser peaks in calibration image."""
     I = Image.open(image_path)
     im = np.array(I)
@@ -54,7 +54,7 @@ def find_laser_pixels(image_path, height_thresh=2000, dist_thresh=50):
     peaks, _ = find_peaks(im_line, height=height_thresh, distance=dist_thresh)
     
     f,ax = plt.subplots(figsize=(6,6))
-    ax.imshow(im, vmin=0, vmax=SAT_VAL)
+    ax.imshow(im, vmin=0, vmax=sat_val)
     ax.set(title='Calibration Image', xlabel='Camera pixels')
     ax.grid(False)
     
