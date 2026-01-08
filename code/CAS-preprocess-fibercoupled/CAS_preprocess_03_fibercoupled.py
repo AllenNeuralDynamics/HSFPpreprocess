@@ -126,41 +126,94 @@ def load_session_params(
     return numFrames, time_list, frames_list, csv_paths
 
 
-
-def check_dropped_frames(frames,times):
+def check_frame_drop(frames_list, times_list):
     """
-    frames: np.ndarray of corrected framestamps
-    times: np.ndarray of camera timestamps
+    1. Detects gaps in hardware framestamps.
+    2. Plots Inter-Frame Interval (IFI) for timing stability analysis.
+    3. Interpolates missing metadata to maintain 1:1 TIFF alignment.
     """
-    # Calculate the jump between consecutive frames
-    # diff[i] = frames[i+1] - frames[i]
-    jumps = np.diff(frames)
-    
-    # Find where the jump is not 1
-    drop_indices = np.where(jumps > 1)[0]
-    
-    if len(drop_indices) == 0:
-        print("No dropped frames detected.")
-        return
-    
-    for idx in drop_indices:
-        drop_count = jumps[idx] - 1
-        drop_time = times[idx]
-        print(f"DROPPED {drop_count} frame(s) at time {drop_time:.3f}s (Index: {idx})")
-        return drop_count, drop_time
+    repaired_f = []
+    repaired_t = []
+
+    for i, (f_arr, t_arr) in enumerate(zip(frames_list, times_list)):
+        # --- PART 1: DIAGNOSTIC PLOTTING ---
+        # calculate the inter-frame-interval, convert to ms
+        ifi_ms = np.diff(t_arr) * 1000
+        
+        # plot the ifi stability across the recording
+        plt.figure(figsize=(10, 4))
+        plt.plot(ifi_ms, color='#1f77b4', alpha=0.7)
+        plt.axhline(y=np.median(ifi_ms), color='r', linestyle='--', 
+                    label=f'Median: {np.median(ifi_ms):.2f}ms')
+        
+        plt.title(f"Timing Stability Raw: Segment {i} ({len(f_arr)} frames)")
+        plt.xlabel("Frame Index")
+        plt.ylabel("Inter-Frame Interval (ms)")
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.show()
+
+        # --- PART 2: DROP DETECTION & REPAIR ---
+        diffs = np.diff(f_arr)
+        gap_indices = np.where(diffs > 1)[0]
+        
+        # if no frame drops are detected:
+        if len(gap_indices) == 0:
+            print(f"Segment {i}: No dropped frames detected.")
+            repaired_f.append(f_arr)
+            repaired_t.append(t_arr)
+            continue # acts as early exit to rest of the for loop
+
+        # Repair logic if there are gaps:
+        f_list = f_arr.tolist()
+        t_list = t_arr.tolist()
+        total_inserted = 0
+        
+        # if there is a frame drop, interpolate a time stamp (work in reverse
+        # to prevent correction from altering other dropped frames):
+        for idx in reversed(gap_indices):
+            # identify the size of the gap (e.g. 1 or 2 frames dropped in a row)
+            num_missing = int(diffs[idx] - 1)
+            # identify the timestamps immediately before and after the drop
+            t_start, t_end = t_arr[idx], t_arr[idx+1]
+            # interpolate missing time stamp, then strip away 'known' start and 
+            # end stamps to keep only new interpolated stamp(s)
+            interp_ts = np.linspace(t_start, t_end, num_missing + 2)[1:-1]
+            
+            for j in range(num_missing):
+                inserted_fs = f_arr[idx] + (j + 1)
+                print(f"Segment {i}: Repairing gap at index {idx}. Inserting Framestamp: {inserted_fs}")
+                
+                # add the missing frame counter
+                f_list.insert(idx + 1, inserted_fs)
+                # add the newly calculated timestamp
+                t_list.insert(idx + 1, interp_ts[j])
+                total_inserted += 1
+                
+        # plot the corrected ifi stability
+        ifi_ms_corr = np.diff(t_list) * 1000
+        plt.figure(figsize=(10, 4))
+        plt.plot(ifi_ms_corr, color='#1f77b4', alpha=0.7)
+        plt.axhline(y=np.median(ifi_ms_corr), color='r', linestyle='--', 
+                     label=f'Median: {np.median(ifi_ms_corr):.2f}ms')
+        plt.title(f"Timing Stability CORRECTED: Segment {i} ({len(f_list)} frames)")
+        plt.xlabel("Frame Index")
+        plt.ylabel("Inter-Frame Interval (ms)")
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.show()
+        
+        
+        # append corrected frame and time series for current recording segment to the list
+        print(f"Segment {i}: Detected {len(gap_indices)} gaps. Inserted {total_inserted} frames.")
+        repaired_f.append(np.array(f_list))
+        repaired_t.append(np.array(t_list))
+        
+        
+    return repaired_f, repaired_t
 
 
-def plot_timing_diagnostics(times):
-    ifi = np.diff(times) * 1000  # Convert to milliseconds
-    
-    plt.figure(figsize=(10, 4))
-    plt.plot(ifi, label='Inter-Frame Interval')
-    plt.axhline(y=np.median(ifi), color='r', linestyle='--', label='Median IFI')
-    plt.xlabel('Frame Index')
-    plt.ylabel('Time Delta (ms)')
-    plt.title('Timing Stability (Jitter Analysis)')
-    plt.legend()
-    plt.show()
+
     
     
 
