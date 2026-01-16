@@ -33,7 +33,7 @@ import PreprocessingFunctions2 as pf
 # SaveDir=r''
 # AnalDir=r'...\behavior'
 
-session_id = 'FIP_836732_2025-12-03_10-23-43'
+session_id = 'FIP_835527_2026-01-12_10-31-26'
 
 SaveDir = r'C:\output_data\results\results_' + session_id
 AnalDir = r'C:\output_data' + os.sep + session_id + os.sep + 'behavior'
@@ -42,11 +42,11 @@ AnalDir = r'C:\output_data' + os.sep + session_id + os.sep + 'behavior'
 os.makedirs(SaveDir, exist_ok=True)
 
 # manually enter when the first reward trial that should actually be counted happened
-first_rew_idx = 23           # 0 for 836733 12/3/25
+first_rew_idx = 0           # 0 for 836733 12/3/25
                             # 23 for 836732 12/3/25
 # for visualization
 #Roi2Vis=[0,1,2]
-Roi2Vis = [0]
+Roi2Vis = [0,1]
 AllPlot=0
 
 # params for pre-processing
@@ -56,7 +56,7 @@ kernelSize = 1 #median filter
 degree = 4 #polyfit
 b_percentile = 0.70 #To calculare F0, median of bottom x%
 
-sampling_rate=20
+
 StimPeriod = 0.5 #sec for visualization`
 preW=100 #nframes for PSTH
 LickWindow=5.0 #sec window length for Consummatory/Omission licks
@@ -234,7 +234,7 @@ if AllPlot==1:
         plt.title('Pupil Diam.')
         plt.xlabel('second')
 
-##
+#%%
 figT=plt.figure('Summary:' + AnalDir,figsize=(16, 16))
 gs = gridspec.GridSpec(12,9)
 plt.subplot(gs[0:4, 0:9])
@@ -278,6 +278,9 @@ if bool(glob.glob(AnalDir + os.sep + "PupilTracking*")) == True:
     plt.plot(data_EyeCam_time, data_Pupil-(ii_ROI)*100-50, color=[0.4, 0.4, 0.4],label='PupilDiam.')
     plt.xlim([0, time_seconds[-1]])
     plt.legend()
+
+
+#%% Plot again but downsampled 
     
 #%% define PSTH functions (for multiple traces)
 def PSTHmaker(TC, Stims, preW, postW):
