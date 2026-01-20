@@ -17,17 +17,17 @@ TrialType_
 #%% setup/imports
 import os
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
+# import matplotlib.gridspec as gridspec
 import numpy as np
-import csv
-import glob
-import re
-from scipy.optimize import curve_fit
-import json
-import pandas as pd
-from scipy.stats import sem
+# import csv
+# import glob
+# import re
+# from scipy.optimize import curve_fit
+# import json
+# import pandas as pd
+# from scipy.stats import sem
 
-import PreprocessingFunctions2 as pf
+#import PreprocessingFunctions2 as pf
 import FIPFunctions2 as fipf
 
 
@@ -44,7 +44,7 @@ first_rew_idx = 0           # 0 for 836733 12/3/25
 # choose which ROIs (fibers) to visualize
 #Roi2Vis=[0,1,2]
 Roi2Vis = [0,1]
-AllPlot=0
+SaveFigs = 0
 
 # params for pre-processing
 nFrame2cut = 100  #crop initial n frames
@@ -53,11 +53,16 @@ kernelSize = 1 #median filter
 degree = 4 #polyfit
 b_percentile = 0.70 #To calculare F0, median of bottom x%
 
-StimPeriod = 0.5 #sec for visualization`
-preW=100 #nframes for PSTH
-LickWindow=5.0 #sec window length for Consummatory/Omission licks
+StimPeriod = 0.1 #sec for visualization, used to show time duration of rew delivery`
+preW = 100 #nframes for PSTH (before event)
+postW = 300 #nframes for PSTH (after event)
+LickWindow = 5.0 #sec window length for Consummatory/Omission licks
 
 #%% Load the data
+# format for data1/2/3 = [m, n] array where m (rows) = number of timestamps and  
+# n (cols) = number of ROIs + 2 (first column = SoftwareTS, last column = HarpTS)
+
+# data1 = isos, data2 = green, data3 = red
 data1, data2, data3, subjectID, TSdict = fipf.load_fip_data(AnalDir)
 
 
@@ -70,23 +75,30 @@ data1, data2, data3, PMts, time_seconds = fipf.sync_and_time(data1, data2, data3
 
 
 #%% Preprocess the data
+# preprocessing skips the first column in data1/2/3 since this is just SoftwareTS
+# output format for X_dF_F = [m, n]  array where m (rows) = number of timestamps and  
+# n (cols) = number of ROIs + 1 (last column = HarpTS)
 Ctrl_dF_F, G_dF_F, R_dF_F = fipf.preprocess_all_channels(
     data1, data2, data3, nFrame2cut, kernelSize, sampling_rate, degree, b_percentile
 )
 
 
 #%% Extract event timestamps into frame indices
-TSFramesdict = fipf.extract_trial_frames(TSdict, data1[:, 0])
-RewardFrames = TSFramesdict.get('Reward', [])
-LickFrames   = TSFramesdict.get('Lick', [])
-CS1Frames   = TSFramesdict.get('CS1', [])
-CS2Frames   = TSFramesdict.get('CS2', [])
-CS3Frames   = TSFramesdict.get('CS3', [])
+event_frames = fipf.get_event_frames(TSdict, data1[:, 0])
+RewardFrames = event_frames.get('Reward', [])
+LickFrames   = event_frames.get('Lick', [])
+CS1Frames   = event_frames.get('CS1', [])
+CS2Frames   = event_frames.get('CS2', [])
+CS3Frames   = event_frames.get('CS3', [])
+ManualRewardFrames = event_frames.get('ManualReward', [])
 
 
 #%% Load pupil data (optional)
 pupil_time, pupil_data = fipf.load_pupil_data(AnalDir, data1[0, 0])
+
+
 #%% Plot the entire trace
+# Pack event traces for plotting
 events = {
     'Reward': RewardFrames,
     'CS1': CS1Frames,
@@ -95,5 +107,153 @@ events = {
     'Lick': LickFrames
 }
 
-fipf.plot_whole_trace(time_seconds, Ctrl_dF_F, G_dF_F, R_dF_F, Roi2Vis, events)
+# Pack pupil data for plotting (if it exists)
+pupil_input = (pupil_time, pupil_data) if 'pupil_data' in locals() and pupil_data is not None else None
 
+fig_wholetrace = fipf.plot_whole_trace(
+    time_seconds, Ctrl_dF_F, G_dF_F, R_dF_F, Roi2Vis, 
+    events, subjectID, AnalDir, StimPeriod, 
+    ds_factor=1, pupil_data=pupil_input
+    )   
+
+if SaveFigs == 1:
+    fig_wholetrace.savefig(os.path.join(SaveDir, f"{subjectID}_WholeTrace_Summary.pdf"), bbox_inches='tight')
+
+#%% Plot a short window of the full trace
+# 1. Define your window in indices (20Hz)
+zoom_start = 150 # time in seconds
+zoom_end = 350 
+
+# Convert to indices
+idx_start = zoom_start * sampling_rate
+idx_end = zoom_end * sampling_rate    
+
+# 2. Slice the main data arrays
+time_subset = time_seconds[idx_start:idx_end]
+Ctrl_subset = Ctrl_dF_F[idx_start:idx_end, :]
+G_subset    = G_dF_F[idx_start:idx_end, :]
+R_subset    = R_dF_F[idx_start:idx_end, :]
+
+# 3. Filter the events
+events_subset = {}
+for key, frames in events.items():
+    subset = [f for f in frames if idx_start <= f < idx_end]
+    events_subset[key] = np.array(subset)
+
+# 4. Filter Pupil Data (Keep original time)
+if pupil_input is not None:
+    p_time, p_vals = pupil_input
+    p_mask = (p_time >= zoom_start) & (p_time <= zoom_end)
+    pupil_subset = (p_time[p_mask], p_vals[p_mask])
+else:
+    pupil_subset = None
+
+# 5. Call the Function
+fig_zoom = fipf.plot_whole_trace(
+    time_subset, Ctrl_subset, G_subset, R_subset, Roi2Vis, 
+    events_subset, subjectID, AnalDir, StimPeriod,
+    ds_factor=1, pupil_data=pupil_subset
+    )
+
+# 6. Adjust X-axis limits to focus specifically on that window
+plt.xlim([zoom_start, zoom_end])
+plt.title(f"Subject: {subjectID} | Actual Time: {zoom_start}s - {zoom_end}s")
+if SaveFigs == 1:
+    fig_zoom.savefig(os.path.join(SaveDir, f"{subjectID}_ZoomTrace_Summary.pdf"), bbox_inches='tight')
+
+#%% Extract trial types (rewarded vs unrewarded)
+# format of trial_data = dict of size 9 with following 3 entry types for CS1, CS2, and CS3:
+    # 1: Mat_CSX = indices for all CSX trials
+    # 2: RewardedCSXind = indices for all rewarded CSX trials
+    # 3: UnRewardedCSXind = indices for all unrewarded CSX trials
+
+# NOTE: will only get trial types R/UR for CS1/CS2/CS3, will need to update the function to get any other types
+trial_data = fipf.get_trial_indices(AnalDir)
+
+# Store indices for rewarded and unrewarded trials of each CS type (optional)
+R_idx_CS1 = trial_data['RewardedCS1ind']
+UR_idx_CS1 = trial_data['UnRewardedCS1ind']
+R_idx_CS2 = trial_data['RewardedCS2ind']
+UR_idx_CS2 = trial_data['UnRewardedCS2ind']
+R_idx_CS3 = trial_data['RewardedCS3ind']
+UR_idx_CS3 = trial_data['UnRewardedCS3ind']
+
+
+#%% Calculate PSTH for signal around all trials
+# format of psth_data = dict of size 18 for each combination of the following:
+    # 1: (3) CS_types (CS1, CS2, CS3)
+    # 2: (2) trial_types (rewarded, unrewarded)
+    # 3: (3) data_types (C = control/isos, G = green, R = red)
+
+# example for accessing psth_data: Green CS3 rewarded = psth_data['G_CS3R_base']
+psth_data = fipf.generate_all_psths(G_dF_F, R_dF_F, Ctrl_dF_F, event_frames, trial_data, preW, postW)
+
+
+# FORMAT - each entry in psth_data has size (x, y, z) where:
+    # x = Time: preW + postW (standard = 400)
+    # y = ROI: each fiber that was recorded from (typically only using 0 and 1)
+    # z = Trials: # of individual trials for the given type (e.g. CS3 rewarded)
+
+#%% Pool data from each ROI together (ONLY IF RECORDING SITES ARE THE SAME)
+psth_pooled_data = fipf.pool_rois_in_psths(psth_data, Roi2Vis)
+
+    
+#%% Plot PSTHs for each trial type with separate ROIs
+# Plot CS1
+# CS1 Rewarded
+if psth_data.get('G_CS1R_base') is not None:
+    fig_psth_CS1R = fipf.plot_roi_psth_summary(psth_data, Roi2Vis, sampling_rate, StimPeriod, preW=100, trial_type='CS1R')
+    fig_peaks_CS1R = fipf.plot_time_to_peak_summary(psth_data, Roi2Vis, sampling_rate, preW, trial_type='CS1R')
+
+    if SaveFigs == 1:
+        fig_psth_CS1R.savefig(os.path.join(SaveDir, f"{subjectID}_CS1R_ROI-Summary.pdf"), bbox_inches='tight')
+else:
+    print("Skipping CS1R: No trials found.")
+
+# CS1 Unrewarded
+if psth_data.get('G_CS1UR_base') is not None:
+    fig_CS1UR = fipf.plot_roi_psth_summary(psth_data, Roi2Vis, sampling_rate, StimPeriod, preW=100, trial_type='CS1UR')
+    if SaveFigs == 1:
+        fig_CS1UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS1UR_ROI-Summary.pdf"), bbox_inches='tight')
+else:
+    print("Skipping CS1UR: No trials found.")
+    
+    
+    
+# Plot CS2
+# CS2 Rewarded
+if psth_data.get('G_CS2R_base') is not None:
+    fig_CS2R = fipf.plot_roi_psth_summary(psth_data, Roi2Vis, sampling_rate, StimPeriod, preW=100, trial_type='CS2R')
+    if SaveFigs == 1:
+        fig_CS2R.savefig(os.path.join(SaveDir, f"{subjectID}_CS2R_ROI-Summary.pdf"), bbox_inches='tight')
+else:
+    print("Skipping CS2R: No trials found.")
+# CS2 Unrewarded
+if psth_data.get('G_CS2UR_base') is not None:
+    fig_CS2UR = fipf.plot_roi_psth_summary(psth_data, Roi2Vis, sampling_rate, StimPeriod, preW=100, trial_type='CS2UR')
+    if SaveFigs == 1:
+        fig_CS2UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS2UR_ROI-Summary.pdf"), bbox_inches='tight')
+else:
+    print("Skipping CS2UR: No trials found.")
+    
+    
+    
+# Plot CS3
+# CS3 Rewarded
+if psth_data.get('G_CS3R_base') is not None:
+    fig_CS3R = fipf.plot_roi_psth_summary(psth_data, Roi2Vis, sampling_rate, StimPeriod, preW=100, trial_type='CS3R')
+    if SaveFigs == 1:
+        fig_CS3R.savefig(os.path.join(SaveDir, f"{subjectID}_CS3R_ROI-Summary.pdf"), bbox_inches='tight')
+else:
+    print("Skipping CS3R: No trials found.")
+# CS3 Unrewarded
+if psth_data.get('G_CS3UR_base') is not None:
+    fig_CS3UR = fipf.plot_roi_psth_summary(psth_data, Roi2Vis, sampling_rate, StimPeriod, preW=100, trial_type='CS3UR')
+    if SaveFigs == 1:
+        fig_CS3UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS3UR_ROI-Summary.pdf"), bbox_inches='tight')
+else:
+    print("Skipping CS3UR: No trials found.")
+    
+    
+
+#%% Plot PSTHs for each trial type with pooled ROIs
