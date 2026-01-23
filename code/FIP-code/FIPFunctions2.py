@@ -9,12 +9,16 @@ import csv
 import numpy as  np
 #import pylab as plt
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 from scipy.signal import medfilt, butter, filtfilt
 from scipy.stats import linregress
 from scipy.optimize import curve_fit, minimize
 import glob
 import re
 import pandas as pd
+import h5py
+import seaborn as sns
+from datetime import datetime
 
 #%%  original preprocess functions
 
@@ -379,7 +383,7 @@ def PSTHmaker(TC, Stims, preW, postW):
                 #PSTHout = np.dstack([PSTHout, np.zeros(preW+postW)])
     return PSTHout
 
-#%% Define PSTH plotting function
+#%% Define PSTH plotting function DEPRECATED
 
 # DEPRECATED: Use PSTHplot_single_roi for grid summaries
 
@@ -546,68 +550,167 @@ def pool_rois_in_psths(psth_data, Roi2Vis):
             
     return pooled_data
 
- #%% plot_roi_psth_summary DEPRECATED
-# def plot_roi_psth_summary(psths, Roi2Vis, sampling_rate, StimPeriod, preW=100, trial_type='CS3R'):
-#     """
-#     Creates a grid where:
-#     - Each ROW is a different ROI.
-#     - Left Column: Green + Control
-#     - Right Column: Red + Control
-#     - Y-axes are matched within each ROI (row).
-#     """
-#     num_rois = len(Roi2Vis)
-#     # 2 columns (Green vs Red), and 'num_rois' rows
-#     fig, axes = plt.subplots(num_rois, 2, figsize=(10, 4 * num_rois), sharex=True)
+#%% sort_timestamps_by_cs
+def sort_timestamps_by_cs(TSdict, trial_data):
+    """
+    Creates a dictionary of timestamps for each CS for rewarded trials only.
+    """
+    TSdict_CSrewarded = {}
+    cs_types = ["CS1", "CS2", "CS3"]
     
-#     # Handle the case where only 1 ROI is selected (axes becomes 1D)
-#     if num_rois == 1:
-#         axes = np.expand_dims(axes, axis=0)
+    # Extract only the primary clock (Col 0) for matching logic
+    # Using .size check to handle empty arrays safely
+    all_rewards = TSdict["Reward"][:, 0] if TSdict["Reward"].size > 0 else np.array([])
+    all_licks = TSdict["Lick"][:, 0] if TSdict["Lick"].size > 0 else np.array([])
 
-#     for i, roi_idx in enumerate(Roi2Vis):
-#         # Identify the axes for this row
-#         ax_green_col = axes[i, 0]
-#         ax_red_col = axes[i, 1]
+    for cs in cs_types:
+        cs_onsets_list = []
+        reward_ts_list = []
+        first_lick_ts_list = []
+
+        # 1. Access the raw 2D array and rewarded indices
+        cs_raw = TSdict.get(cs, np.array([]))
+        r_indices = trial_data.get(f"Rewarded{cs}ind", [])
+
+        # 2. Only proceed if the CS array is not empty and has rewarded trials
+        if cs_raw.size > 0 and len(r_indices) > 0:
+            # Slicing the first column of the 2D array at the rewarded indices
+            rewarded_onsets = cs_raw[r_indices, 0]
+
+            for onset in rewarded_onsets:
+                # Find the first reward timestamp strictly after CS onset
+                future_rewards = all_rewards[all_rewards > onset]
+                
+                if future_rewards.size > 0:
+                    rew_t = future_rewards[0]
+                    
+                    # Find the first lick timestamp strictly after reward delivery
+                    future_licks = all_licks[all_licks > rew_t]
+                    
+                    if future_licks.size > 0:
+                        lick_t = future_licks[0]
+                        
+                        # Sync all three timestamps for this specific trial
+                        cs_onsets_list.append(onset)
+                        reward_ts_list.append(rew_t)
+                        first_lick_ts_list.append(lick_t)
+
+        # Convert to 1D numpy arrays 
+        cs_arr = np.array(cs_onsets_list)
+        rew_arr = np.array(reward_ts_list)
+        lick_arr = np.array(first_lick_ts_list)
         
-#         # Get data
-#         g_data = psths.get(f'G_{trial_type}_base')
-#         r_data = psths.get(f'R_{trial_type}_base')
-#         c_data = psths.get(f'C_{trial_type}_base')
-
-#         # --- LEFT COLUMN: GREEN + CONTROL ---
-#         if g_data is not None and c_data is not None:
-#             PSTHplot_single_roi(g_data[:, roi_idx, :], 'green', [0, 0.8, 0], 'Green', preW, sampling_rate, ax_green_col, StimPeriod, trial_type=trial_type)
-#             PSTHplot_single_roi(c_data[:, roi_idx, :], 'blue', [0, 0, 0.8], 'Ctrl', preW, sampling_rate, ax_green_col, StimPeriod, trial_type=trial_type)
+        # 3. Create dictionary entries
+        # If no trials met the criteria, these result in empty arrays
+        TSdict_CSrewarded[cs] = cs_arr
+        TSdict_CSrewarded[f"{cs}Reward"] = rew_arr
+        TSdict_CSrewarded[f"{cs}FirstLick"] = lick_arr
         
-#         ax_green_col.set_title(f'ROI {roi_idx}: Green + Ctrl')
-#         ax_green_col.set_ylabel('dF/F (%)')
+        # Calculate Reaction Time (Lick - Reward)
+        TSdict_CSrewarded[f"{cs}ReactionTime"] = lick_arr - rew_arr
 
-#         # --- RIGHT COLUMN: RED + CONTROL ---
-#         if r_data is not None and c_data is not None:
-#             PSTHplot_single_roi(r_data[:, roi_idx, :], 'magenta', [0.8, 0, 0.8], 'Red', preW, sampling_rate, ax_red_col, StimPeriod, trial_type=trial_type)
-#             PSTHplot_single_roi(c_data[:, roi_idx, :], 'blue', [0, 0, 0.8], 'Ctrl', preW, sampling_rate, ax_red_col, StimPeriod, trial_type=trial_type)
+    return TSdict_CSrewarded
+
+
+#%% calculate_fip_peaks
+def calculate_fip_peaks(psth_data, TSdict_CSrewarded, sampling_rate, preW, PeakWindow):
+    """
+    Calculates peaks in provided PeakWindow (relative to CS onset) and determines 
+    peak latency relative to CS, Reward, and Lick. Uses TSdict_CSrewarded to determine 
+    search windows per trial.
+    """
+    results = {}
+    
+    win_start_idx = int(preW + (PeakWindow[0] * sampling_rate))
+    win_end_idx = int(preW + (PeakWindow[1] * sampling_rate))
+    
+    for key, data in psth_data.items():
+        if data is None or not key.startswith(('G_', 'R_')):
+            continue
             
-#         ax_red_col.set_title(f'ROI {roi_idx}: Red + Ctrl')
-#         ax_red_col.set_ylabel('dF/F (%)')
+        # Parse Key (e.g., 'G_CS3R_base' -> cs_type = 'CS3')
+        # We only calculate reward/lick peaks for rewarded ('R_base') keys
+        parts = key.split('_')
+        trial_type = parts[1] # 'CS3R', 'CS1UR', etc.
+        cs_type = trial_type[:3] # 'CS1', 'CS2', 'CS3'
         
-#         # Match Y-axes for this row (this ROI)
-#         y1_min, y1_max = ax_green_col.get_ylim()
-#         y2_min, y2_max = ax_red_col.get_ylim()
-#         common_min = min(y1_min, y2_min)
-#         common_max = max(y1_max, y2_max)
+        # 1. FIND THE SIGNAL PEAK in the specified window (All trials)
+        # Standard window: 0s to 5s after CS onset
+        subset = data[win_start_idx:win_end_idx, :, :]
         
-#         ax_green_col.set_ylim(common_min, common_max)
-#         ax_red_col.set_ylim(common_min, common_max)
+        if subset.size == 0:
+            continue
+        
+        # Get index of max relative to the window start
+        peak_idx_in_window = np.argmax(subset, axis=0)
+        
+        # Convert to time relative to CS Onset (Time 0)
+        # (Peak Index + Window Start Index - CS Onset Index) / Sampling Rate
+        peak_times_rel_to_cs = (peak_idx_in_window + win_start_idx - preW) / sampling_rate
+        
+        results[f"{key}_peak_mag"] = np.max(subset, axis=0)
+        results[f"{key}_peak_cs_lat"] = peak_times_rel_to_cs
+        
+        
 
-#     # Only add X-label to the bottom row
-#     axes[-1, 0].set_xlabel('Time (s)')
-#     axes[-1, 1].set_xlabel('Time (s)')
+        # 2. CALCULATE RELATIVE LATENCIES (rewarded trials only)
+        if 'R_base' in key and 'UR_base' not in key and cs_type in TSdict_CSrewarded:
+            beh = TSdict_CSrewarded
+            
+            # These are also 1D arrays of time relative to CS onset
+            reward_offsets = (beh[f"{cs_type}Reward"] - beh[cs_type]) / 1000.0
+            lick_offsets = (beh[f"{cs_type}FirstLick"] - beh[cs_type]) / 1000.0
 
-#     fig.suptitle(f'Summary PSTH: {trial_type}', fontsize=16, fontweight='bold', y=0.98)
-#     plt.tight_layout(rect=[0, 0.03, 1, 0.97])
-#     return fig
-    
-#%%
-def plot_roi_psth_summary(psths, Roi2Vis, sampling_rate, StimPeriod, preW=100, trial_type='CS3R'):
+            # We need to broadcast the 1D behavior offsets to match (ROIs, Trials)
+            # peak_times_rel_to_cs is (ROIs, Trials)
+            # reward_offsets is (Trials,)
+            
+            # Latency = (Time of Peak) - (Time of Event)
+            # If Peak is at 2s and Reward is at 3s, Latency = -1s (Peak happened before Reward)
+            results[f"{key}_peak_rew_lat"] = peak_times_rel_to_cs - reward_offsets[np.newaxis, :]
+            results[f"{key}_peak_lick_lat"] = peak_times_rel_to_cs - lick_offsets[np.newaxis, :]
+            
+    return results
+
+
+#%% plot_latency_comparison
+def plot_latency_comparison(results, trial_type='CS3R', roi_idx=0):
+    """
+    Plots histograms of latencies relative to CS, Reward, and Lick
+    to compare signal alignment.
+    """
+    # Extract the data from the results dictionary
+    cs_lat = results.get(f'G_{trial_type}_base_peak_cs_lat', [])
+    rew_lat = results.get(f'G_{trial_type}_base_peak_rew_lat', [])
+    lick_lat = results.get(f'G_{trial_type}_base_peak_lick_lat', [])
+
+    # Check if we have data (selecting specific ROI)
+    if len(cs_lat) == 0:
+        print(f"No data found for {trial_type}")
+        return
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharey=True)
+    fig.suptitle(f'Latency Alignment Comparison: {trial_type} (ROI {roi_idx})', fontsize=16)
+
+    # Plot CS Latency
+    sns.histplot(cs_lat[roi_idx, :], binwidth=0.05, ax=axes[0], color='skyblue', kde=True)
+    axes[0].set_title('Relative to CS Onset')
+    axes[0].set_xlabel('Time (s)')
+
+    # Plot Reward Latency
+    sns.histplot(rew_lat[roi_idx, :], binwidth=0.05, ax=axes[1], color='salmon', kde=True)
+    axes[1].set_title('Relative to Reward')
+    axes[1].set_xlabel('Time (s)')
+
+    # Plot Lick Latency
+    sns.histplot(lick_lat[roi_idx, :], binwidth=0.05, ax=axes[2], color='green', kde=True)
+    axes[2].set_title('Relative to First Lick')
+    axes[2].set_xlabel('Time (s)')
+
+    plt.tight_layout()
+    plt.show()
+#%% plot_roi_psth_summary
+def plot_roi_psth_summary(psths, subjectID, Roi2Vis, sampling_rate, StimPeriod, preW=100, trial_type='CS3R'):
     """
     Creates a grid where:
     - Each ROW is a different ROI.
@@ -646,7 +749,7 @@ def plot_roi_psth_summary(psths, Roi2Vis, sampling_rate, StimPeriod, preW=100, t
     axes[-1, 0].set_xlabel('Time (s)')
     axes[-1, 1].set_xlabel('Time (s)')
 
-    fig.suptitle(f'Summary PSTH: {trial_type}', fontsize=16, fontweight='bold', y=0.98)
+    fig.suptitle(f'{subjectID} Summary PSTH: {trial_type}', fontsize=16, fontweight='bold', y=0.98)
     plt.tight_layout(rect=[0, 0.03, 1, 0.97])
     return fig
 
@@ -715,20 +818,548 @@ def PSTHplot_single_roi(PSTH_subset, MainColor, SubColor, LabelStr, preW, sampli
     ax.legend(loc='upper right', fontsize='x-small')
     
     
+#%% plot_time_to_peak_summary
+def plot_time_to_peak_summary(psths, subjectID, Roi2Vis, sampling_rate, preW, trial_type='CS3R', search_window=[0, 5.0]):
+    """
+    Calculates and plots the Time to Peak for Green and Red channels.
+    - Each ROW corresponds to the ROIs in Roi2Vis + one Combined row.
+    - Bars represent the mean time-to-peak; points represent individual trials.
+    """
+    num_rois = len(Roi2Vis)
+    total_rows = num_rois + 1
     
+    fig, axes = plt.subplots(total_rows, 1, figsize=(6, 4 * total_rows), sharex=True)
+    if total_rows == 1: axes = [axes]
+
+    # Define the search window in indices
+    start_idx = int(preW + (search_window[0] * sampling_rate)) 
+    end_idx = int(preW + (search_window[1] * sampling_rate))
+
+    # --- 1. Process Individual ROIs ---
+    for i, roi_idx in enumerate(Roi2Vis):
+        _plot_peak_bars(psths, roi_idx, axes[i], trial_type, start_idx, end_idx, sampling_rate, f'ROI {roi_idx}')
+
+    # --- 2. Process Combined Row ---
+    pooled_psths = pool_rois_in_psths(psths, Roi2Vis)
+    _plot_peak_bars(pooled_psths, 0, axes[-1], trial_type, start_idx, end_idx, sampling_rate, 'Combined ROIs')
+
+    # Formatting
+    axes[-1].set_xlabel('Time to Peak (s)')
+    fig.suptitle(f'{subjectID} Time to Peak Summary: {trial_type}\n(Window: {search_window[0]}-{search_window[1]}s)', 
+                 fontsize=14, fontweight='bold', y=0.98)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     
-# def PSTHplot_single_roi(PSTH_subset, MainColor, SubColor, LabelStr, preW, sampling_rate, ax):
-#     """Plots a PSTH subplot for G+Ctrl or R+Ctrl"""
-#     time_x = np.arange(PSTH_subset.shape[0]) / sampling_rate - preW / sampling_rate
-#     mean_trace = np.mean(PSTH_subset, axis=1)
-#     sem = np.std(PSTH_subset, axis=1) / np.sqrt(PSTH_subset.shape[1])
+    return fig
+
+def _plot_peak_bars(psths, idx, ax, trial_type, start_idx, end_idx, sampling_rate, title_prefix):
+    """Helper to calculate peaks and draw the bar/dot plot for one row."""
+    g_data = psths.get(f'G_{trial_type}_base')
+    r_data = psths.get(f'R_{trial_type}_base')
+
+    channel_data = {'Green': g_data, 'Red': r_data}
+    colors = {'Green': 'green', 'Red': 'magenta'}
+    y_positions = [1, 0] # Green on top, Red on bottom
     
-#     # 1. Add Shaded Event Spans
-#     # CS Span: Starts at 0, lasts for StimPeriod (e.g., 0.5s or 1.0s)
-#     ax.axvspan(0, 1.0, color=[1, 0, 1, 0.2], lw=0, label='CS3' if LabelStr=='Green' else "")
+    peaks_found = False
+
+    for label, data in channel_data.items():
+        if data is not None:
+            # Slice: [TimeWindow, ROI_idx, AllTrials]
+            # We search for the max value after Time 0
+            trials_slice = data[start_idx:end_idx, idx, :]
+            
+            # Find index of max value for each trial
+            # result is an array of indices relative to start_idx
+            peak_indices = np.argmax(trials_slice, axis=0)
+            
+            # Convert indices to seconds
+            peak_times = peak_indices / sampling_rate
+            
+            # Plot individual trial points (jittered for visibility)
+            y_jitter = np.random.normal(y_positions[label=='Red'], 0.05, size=len(peak_times))
+            ax.scatter(peak_times, y_jitter, color=colors[label], alpha=0.4, s=20)
+            
+            # Plot Mean Bar
+            mean_peak = np.mean(peak_times)
+            ax.barh(y_positions[label=='Red'], mean_peak, color=colors[label], alpha=0.2, height=0.6)
+            ax.vlines(mean_peak, y_positions[label=='Red']-0.3, y_positions[label=='Red']+0.3, 
+                      color=colors[label], lw=3, label=f"{label} (avg: {mean_peak:.2f}s)")
+            
+            peaks_found = True
+
+    ax.set_yticks([1, 0])
+    ax.set_yticklabels(['Green', 'Red'])
+    ax.set_title(title_prefix)
+    ax.set_xlim(0, 5) # Matches the search window
+    if peaks_found:
+        ax.legend(loc='upper right', fontsize='x-small')
+        
+        
+        
+        
+#%% calculate_and_plot_rt
+def calculate_and_plot_rt(ts_dict, subjectID, save_dir, save_figs=1):
+    """
+    Calculates latency from Reward timestamp to the first subsequent Lick.
+    Generates a 3-panel summary PDF and returns the RT array.
+    """
+    # 1. Extract timestamps (assuming they are in seconds, adjust /1000 if not)
+    RewardTime = ts_dict.get("Reward")
+    LickTime = ts_dict.get("Lick")
+
+    if RewardTime is None or LickTime is None:
+        print("Skipping RT calculation: Reward or Lick timestamps missing.")
+        return None
+
+
+    RewardedLickFrames = np.empty(len(RewardTime))
+    RewardRT = np.empty(len(RewardTime))
+
+    # 2. Calculate Latency to first lick AFTER reward
+    for ii in range(len(RewardTime)):
+        # 1. Find the index of the lick closest in time to the reward
+        idx = np.argmin(np.abs(LickTime[:, 0] - RewardTime[ii, 0]))
+        
+        # 2. If the closest lick was BEFORE or AT the reward, 
+        # move to the next lick in the array.
+        if LickTime[idx, 0] - RewardTime[ii, 0] <= 0:
+            idx = idx + 1
+            
+        try:
+            RewardedLickFrames[ii] = idx
+            # Difference remains in milliseconds (assuming original TS units)
+            RewardRT[ii] = LickTime[idx, 0] - RewardTime[ii, 0]
+        except:
+            # Handle cases where idx + 1 goes out of bounds
+            print(f"skipped Reward index {ii}: lick index {idx} out of range")
+            RewardRT[ii] = np.nan
+            
+            
+            
+
+    # 3. Plotting
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
     
+    # Panel 1: RT across trials
+    axes[0].plot(RewardRT/1000)
+    axes[0].set_ylabel('Reaction Time (s)')
+    axes[0].set_xlabel('Reward #')
+    axes[0].set_title('med RT:' + str(np.round(np.nanmedian(RewardRT / 1000), 4)) + ' (s)')
+
+    # Panel 2: Distribution of all RTs
+    axes[1].hist(RewardRT[~np.isnan(RewardRT)]/1000, bins=15, color='gray', edgecolor='black')
+    axes[1].set_ylabel('Trial Count')
+    axes[1].set_xlabel('Reaction Time (s)')
+    axes[1].set_title('Full Distribution')
+
+    # Panel 3: Zoomed distribution (Fast responses < 0.5s)
+    fast_rts = RewardRT[RewardRT < 500]
+    axes[2].hist(fast_rts/1000, bins=10, color='skyblue', edgecolor='black')
+    axes[2].set_ylabel('Trial Count')
+    axes[2].set_xlabel('Reaction Time < 0.5s (s)')
+    axes[2].set_title(f'Fast Licks (n={len(fast_rts)})')
+
+    plt.tight_layout()
+
+    # 4. Save and Return
+    if save_figs == 1:
+        save_path = os.path.join(save_dir, f'{subjectID}_ReactionTime.pdf')
+        fig.savefig(save_path, bbox_inches='tight')
+        print(f"RT plot saved to: {save_path}")
     
-#     ax.plot(time_x, mean_trace, label=LabelStr, color=MainColor, lw=2)
-#     ax.fill_between(time_x, mean_trace - sem, mean_trace + sem, facecolor=SubColor, alpha=0.3)
-#     ax.axvline(0, color='black', linestyle='--', alpha=0.5) # Stimulus onset
-#     ax.legend(loc='upper right', fontsize='small')
+    return RewardRT
+
+#%% plot_comprehensive_trial_summary
+# def generate_all_trial_summaries(psth_data, peak_results, TSdict_CSrewarded, 
+#                                  roi_indices, sampling_rate, preW, save_dir, subjectID):
+#     """Loops through all trial types and saves a comprehensive summary figure for each."""
+#     trial_types = ['CS1R', 'CS1UR', 'CS2R', 'CS2UR', 'CS3R', 'CS3UR']
+#     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+#     for tt in trial_types:
+#         green_key = f"G_{tt}_base"
+#         red_key = f"R_{tt}_base"
+        
+#         # Only trigger if data exists and is not None
+#         if (green_key in psth_data and psth_data[green_key] is not None) or \
+#            (red_key in psth_data and psth_data[red_key] is not None):
+            
+#             try:
+#                 fig = plot_comprehensive_trial_summary(psth_data, peak_results, TSdict_CSrewarded, 
+#                                                        tt, roi_indices, sampling_rate, preW, subjectID)
+                
+#                 save_filename = f"{subjectID}_Summary_{tt}_{timestamp}.png"
+#                 fig.savefig(os.path.join(save_dir, save_filename), bbox_inches='tight', dpi=150)
+#                 print(f"Generated: {save_filename}")
+#             except Exception as e:
+#                 print(f"Error on {tt}: {e}")
+
+# def plot_comprehensive_trial_summary(psth_data, peak_results, TSdict_CSrewarded, 
+#                                      trial_type, roi_indices, sampling_rate, preW, subjectID):
+#     cs_name = trial_type[:3]
+#     is_rewarded = 'UR' not in trial_type
+#     cs_colors = {'CS1': [1, 0, 0, 0.4], 'CS2': [0, 1, 0, 0.4], 'CS3': [1, 0, 1, 0.4]}
+#     colors = {'cs': cs_colors.get(cs_name), 'rew': [0, 0, 1, 0.4], 'lick': [0, 0, 0, 1.0]}
+
+#     n_rois = len(roi_indices)
+#     total_grid_rows = (n_rois + 1) * 3
+#     fig = plt.figure(figsize=(30, 4 * (n_rois + 1)))
+#     gs = gridspec.GridSpec(total_grid_rows, 9, figure=fig)
+#     fig.suptitle(f"Subject: {subjectID} | Trial Type: {trial_type}", fontsize=22, fontweight='bold', y=1.02)
+
+#     # Add 'combined' to the list of things to plot
+#     plot_list = roi_indices + ['combined']
+
+#     for r_idx, roi in enumerate(plot_list):
+#         row_offset = r_idx * 3
+        
+#         for sig_idx, sig_prefix in enumerate(['G', 'R']):
+#             col_start = sig_idx * 4
+#             psth_key = f"{sig_prefix}_{trial_type}_base"
+#             ctrl_key = f"{sig_prefix}_{trial_type}_ctrl"
+            
+#             if psth_key not in psth_data or psth_data[psth_key] is None:
+#                 continue
+
+#             # 1. PSTH
+#             ax_psth = fig.add_subplot(gs[row_offset:row_offset+3, col_start])
+#             _plot_psth_on_ax(ax_psth, psth_data, psth_key, psth_data.get(ctrl_key), 
+#                              sampling_rate, preW, sig_prefix, roi, roi_indices)
+            
+#             # 2. Peak Magnitude
+#             ax_mag = fig.add_subplot(gs[row_offset:row_offset+3, col_start+1])
+#             _plot_mag_points(ax_mag, peak_results, psth_key, roi, sig_prefix, roi_indices)
+
+#             # 3 & 4. Latency Average & Histograms
+#             lats = ['cs_lat', 'rew_lat', 'lick_lat'] if is_rewarded else ['cs_lat']
+#             l_colors = [colors['cs'], colors['rew'], colors['lick']]
+            
+#             for i, (l_type, l_color) in enumerate(zip(lats, l_colors)):
+#                 lat_key = f"{psth_key}_peak_{l_type}"
+#                 raw_data = peak_results.get(lat_key)
+#                 if raw_data is not None:
+#                     # Slice for ROI or average across specified Roi2Vis indices
+#                     if roi == 'combined':
+#                         vals = np.nanmean(raw_data[roi_indices, :], axis=0)
+#                     else:
+#                         vals = raw_data[roi, :]
+                    
+#                     # AVG PLOT
+#                     ax_avg = fig.add_subplot(gs[row_offset + i, col_start + 2])
+#                     _plot_latency_avg(ax_avg, vals, l_color, i == len(lats)-1)
+                    
+#                     # HIST PLOT
+#                     ax_hist = fig.add_subplot(gs[row_offset + i, col_start + 3])
+#                     _plot_latency_hist(ax_hist, vals, l_color, i == len(lats)-1)
+
+#     _add_reaction_time_column(fig, gs, TSdict_CSrewarded, cs_name, total_grid_rows)
+#     plt.tight_layout()
+#     return fig
+
+# # --- Helper Functions (Updated with Trial-Averaging Logic) ---
+
+# def _plot_psth_on_ax(ax, psth_dict, p_key, c_data, fs, preW, sig, roi, roi_indices):
+#     data = psth_dict[p_key]
+#     time_x = (np.arange(data.shape[0]) - preW) / fs
+    
+#     if roi == 'combined':
+#         # Average only across the specific ROIs in Roi2Vis
+#         trial_avg = np.nanmean(data[:, roi_indices, :], axis=1)
+#         mean_trace = np.nanmean(trial_avg, axis=1)
+#     else:
+#         mean_trace = np.nanmean(data[:, roi, :], axis=1)
+        
+#     ax.plot(time_x, mean_trace, color='green' if sig == 'G' else 'red', lw=2)
+#     if c_data is not None:
+#         c_mean = np.nanmean(c_data[:, roi_indices if roi=='combined' else roi, :], axis=(1,2) if roi=='combined' else 1)
+#         ax.plot(time_x, c_mean, color='gray', alpha=0.5)
+    
+#     ax.axvline(0, color='black', alpha=0.7)
+#     ax.set_title(f"{sig} {'Pooled' if roi=='combined' else f'ROI {roi}'}")
+
+# def _plot_mag_points(ax, results, key, roi, sig, roi_indices):
+#     data = results[f"{key}_peak_mag"]
+#     vals = np.nanmean(data[roi_indices, :], axis=0) if roi == 'combined' else data[roi, :]
+#     vals = vals[~np.isnan(vals)]
+    
+#     if vals.size > 0:
+#         sns.stripplot(y=vals, ax=ax, color='green' if sig == 'G' else 'red', alpha=0.4, jitter=True)
+#         ax.errorbar(0, np.mean(vals), yerr=np.std(vals)/np.sqrt(len(vals)), fmt='ko')
+#     ax.set_title("Peak Mag")
+#     ax.set_xticks([])
+
+# def _plot_latency_avg(ax, vals, color, is_last):
+#     vals = vals[~np.isnan(vals)]
+#     if vals.size > 0:
+#         ax.scatter(vals, np.random.normal(1, 0.04, len(vals)), color=color, alpha=0.4, s=12)
+#         ax.errorbar(np.mean(vals), 1, xerr=np.std(vals)/np.sqrt(len(vals)), fmt='|k', markersize=10)
+#         ax.plot(np.mean(vals), 1, 'ko', markersize=4)
+#     ax.axvline(0, color='gray', linestyle='--', alpha=0.5)
+#     ax.set_xlim([-2, 5]); ax.set_yticks([])
+#     if not is_last: ax.set_xticklabels([])
+
+# def _plot_latency_hist(ax, vals, color, is_last):
+#     vals = vals[~np.isnan(vals)]
+#     if vals.size > 0:
+#         sns.histplot(vals, ax=ax, color=color, kde=True, element="step", alpha=0.3, linewidth=0)
+#     ax.axvline(0, color='gray', linestyle='--', alpha=0.5)
+#     ax.set_xlim([-2, 5]); ax.set_ylabel("")
+#     if not is_last: ax.set_xticklabels([])
+
+# def _add_reaction_time_column(fig, gs, beh, cs, total_rows):
+#     rt = beh.get(f"{cs}ReactionTime", np.array([]))
+#     if rt.size == 0: return
+#     ax1 = fig.add_subplot(gs[0:int(total_rows/3), 8])
+#     ax1.plot(rt, 'k-o', alpha=0.5, markersize=3); ax1.set_title("RT/Trial")
+#     ax2 = fig.add_subplot(gs[int(total_rows/3):int(2*total_rows/3), 8])
+#     sns.histplot(rt, ax=ax2, color='black', alpha=0.2, kde=True); ax2.set_title("RT Dist")
+#     ax3 = fig.add_subplot(gs[int(2*total_rows/3):total_rows, 8])
+#     sns.histplot(rt[rt<0.5], ax=ax3, color='red', alpha=0.3, kde=True); ax3.set_title("Fast RT")
+
+
+
+#%% generate_all_trial_summaries
+def generate_all_trial_summaries(psth_data, peak_results, TSdict_CSrewarded, 
+                                 roi_indices, sampling_rate, preW, save_dir, subjectID, StimPeriod):
+    """Loops through all trial types and saves a comprehensive summary figure."""
+    trial_types = ['CS1R', 'CS1UR', 'CS2R', 'CS2UR', 'CS3R', 'CS3UR']
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    for tt in trial_types:
+        green_key, red_key = f"G_{tt}_base", f"R_{tt}_base"
+        if (green_key in psth_data and psth_data[green_key] is not None) or \
+           (red_key in psth_data and psth_data[red_key] is not None):
+            try:
+                fig = plot_comprehensive_trial_summary(psth_data, peak_results, TSdict_CSrewarded, 
+                                                       tt, roi_indices, sampling_rate, preW, subjectID, StimPeriod)
+                save_filename = f"{subjectID}_Summary_{tt}_{timestamp}.pdf"
+                fig.savefig(os.path.join(save_dir, save_filename), bbox_inches='tight', format='pdf')
+            except Exception as e:
+                print(f"Error on {tt}: {e}")
+
+def plot_comprehensive_trial_summary(psth_data, peak_results, TSdict_CSrewarded, 
+                                     trial_type, roi_indices, sampling_rate, preW, subjectID, StimPeriod):
+    is_rewarded = 'R' in trial_type and 'UR' not in trial_type
+    n_rois = len(roi_indices)
+    total_grid_rows = (n_rois + 1) * 3
+    fig = plt.figure(figsize=(30, 4 * (n_rois + 1)))
+    gs = gridspec.GridSpec(total_grid_rows, 9, figure=fig)
+    fig.suptitle(f"Subject: {subjectID} | Trial Type: {trial_type}", fontsize=22, fontweight='bold', y=1.02)
+
+    plot_list = roi_indices + ['combined']
+    for r_idx, roi in enumerate(plot_list):
+        row_offset = r_idx * 3
+        
+        # Calculate Shared Y-Limits for this ROI row ---
+        y_min, y_max = 0, 0
+        valid_signals = []
+        
+        for sig_prefix in ['G', 'R']:
+            p_key = f"{sig_prefix}_{trial_type}_base"
+            if p_key in psth_data and psth_data[p_key] is not None:
+                # Extract the data we are actually going to plot
+                if roi == 'combined':
+                    trace = np.nanmean(psth_data[p_key][:, roi_indices, :], axis=(1, 2))
+                else:
+                    trace = np.nanmean(psth_data[p_key][:, roi, :], axis=1)
+                
+                # Update bounds with a small buffer (e.g., 10%)
+                y_min = min(y_min, np.nanmin(trace))
+                y_max = max(y_max, np.nanmax(trace))
+                valid_signals.append(sig_prefix)
+        
+        # Add 10% padding so the traces don't touch the top/bottom box
+        padding = (y_max - y_min) * 0.1
+        shared_ylim = (y_min - padding, y_max + padding)
+        
+        
+        for sig_idx, sig_prefix in enumerate(['G', 'R']):
+            col_start = sig_idx * 4
+            p_key = f"{sig_prefix}_{trial_type}_base"
+            c_key = f"C_{trial_type}_base"
+            if p_key not in psth_data or psth_data[p_key] is None: continue
+
+            # 1. PSTH (Now using your format)
+            ax_psth = fig.add_subplot(gs[row_offset:row_offset+3, col_start])
+            _plot_psth_formatted(ax_psth, psth_data, p_key, c_key, sampling_rate, preW,
+                                 sig_prefix, roi, roi_indices, StimPeriod, trial_type)
+
+            # Apply the shared limits
+            ax_psth.set_ylim(shared_ylim)
+
+
+            # 2. Peak Mag (Now with (∆F/F) and sig+roi labels)
+            ax_mag = fig.add_subplot(gs[row_offset:row_offset+3, col_start+1])
+            _plot_mag_points_labeled(ax_mag, peak_results, p_key, roi, sig_prefix, roi_indices)
+
+            # 3 & 4. Latency (Shared Y-labels for Scatter and Hist)
+            lats = ['cs_lat', 'rew_lat', 'lick_lat'] if is_rewarded else ['cs_lat']
+            y_labels = ['CS', 'Reward', 'Lick']
+            l_colors = [[1,0,1,0.4] if 'CS3' in trial_type else [0,1,0,0.4] if 'CS2' in trial_type else [1,0,0,0.4], [0,0,1,0.4], [0,0,0,1]]
+            
+            for i, (l_type, l_label, l_color) in enumerate(zip(lats, y_labels, l_colors)):
+                lat_key = f"{p_key}_peak_{l_type}"
+                if lat_key in peak_results:
+                    vals = np.nanmean(peak_results[lat_key][roi_indices, :], axis=0) if roi == 'combined' else peak_results[lat_key][roi, :]
+                    
+                    ax_avg = fig.add_subplot(gs[row_offset + i, col_start + 2])
+                    _plot_latency_avg_labeled(ax_avg, vals, l_color, i, l_label)
+                    
+                    ax_hist = fig.add_subplot(gs[row_offset + i, col_start + 3])
+                    _plot_latency_hist_sync(ax_hist, vals, l_color, i == len(lats)-1)
+
+    _add_reaction_time_column(fig, gs, TSdict_CSrewarded, trial_type[:3], total_grid_rows)
+    plt.tight_layout()
+    return fig
+
+# --- Refined Helpers ---
+
+def _plot_psth_formatted(ax, psth_dict, p_key, c_key, fs, preW, sig, roi, roi_indices, StimPeriod, trial_type):
+    # Combined vs Single ROI extraction
+    if roi == 'combined':
+        psth_subset = np.nanmean(psth_dict[p_key][:, roi_indices, :], axis=1)
+        ctrl_subset = np.nanmean(psth_dict[c_key][:, roi_indices, :], axis=1) if c_key in psth_dict else None
+    else:
+        psth_subset = psth_dict[p_key][:, roi, :]
+        ctrl_subset = psth_dict[c_key][:, roi, :] if c_key in psth_dict else None
+
+    # Plot Main Signal
+    main_c = 'green' if sig == 'G' else 'red'
+    sub_c = [0, 0.8, 0, 0.3] if sig == 'G' else [0.8, 0, 0, 0.3]
+    # Reusing your PSTHplot_single_roi logic here
+    time_x = np.arange(psth_subset.shape[0]) / fs - preW / fs
+    mean_trace = np.nanmean(psth_subset, axis=1)
+    sem = np.nanstd(psth_subset, axis=1) / np.sqrt(psth_subset.shape[1])
+    
+    # CS/Reward Spans
+    cs_colors = {'CS1': [1,0,0,0.2], 'CS2': [0,1,0,0.2], 'CS3': [1,0,1,0.2]}
+    ax.axvspan(0, 1.0, color=cs_colors.get(trial_type[:3], [0.5,0.5,0.5,0.2]), lw=0)
+    if 'R' in trial_type and 'UR' not in trial_type:
+        ax.axvspan(2.0, 2.0 + StimPeriod, color=[0,0,1,0.2], lw=0)
+
+    ax.plot(time_x, mean_trace, color=main_c, lw=2, label=f"{sig} (n={psth_subset.shape[1]})")
+    ax.fill_between(time_x, mean_trace-sem, mean_trace+sem, color=sub_c, alpha=0.3)
+    
+    # Control Signal
+    if ctrl_subset is not None:
+        c_mean = np.nanmean(ctrl_subset, axis=1)
+        c_sem = np.nanstd(ctrl_subset, axis=1) / np.sqrt(ctrl_subset.shape[1])
+        ax.plot(time_x, c_mean, color=[0, 0, 1, 1.0], lw=1, label='Ctrl')
+        ax.fill_between(time_x, c_mean - c_sem, c_mean + c_sem, color=[0, 0, 1], alpha=0.1)
+        
+    ax.axvline(0, color='black', linestyle='--', alpha=0.5)
+    ax.axhline(0, color='black', linestyle='-', alpha=0.2)
+    ax.legend(loc='upper right', fontsize='xx-small')
+    ax.set_title(f"PSTH {'Pooled' if roi=='combined' else f'ROI {roi}'}")
+
+def _plot_mag_points_labeled(ax, results, p_key, roi, sig, roi_indices):
+    data = results[f"{p_key}_peak_mag"]
+    vals = np.nanmean(data[roi_indices, :], axis=0) if roi == 'combined' else data[roi, :]
+    vals = vals[~np.isnan(vals)]
+    if vals.size > 0:
+        sns.stripplot(y=vals, ax=ax, color='green' if sig == 'G' else 'red', alpha=0.4, jitter=True)
+        ax.errorbar(0, np.mean(vals), yerr=np.nanstd(vals)/np.sqrt(len(vals)), fmt='ko')
+    ax.set_title(f"Peak Mag (∆F/F)\n{sig} ROI {roi}", fontsize=9)
+    ax.set_xticks([])
+
+def _plot_latency_avg_labeled(ax, vals, color, index, l_label):
+    if index == 0: ax.set_title("Peak Latency (Relative to Event)", fontsize=9)
+    vals = vals[~np.isnan(vals)]
+    if vals.size > 0:
+        ax.scatter(vals, np.random.normal(1, 0.04, len(vals)), color=color, alpha=0.4, s=12)
+        ax.errorbar(np.nanmean(vals), 1, xerr=np.nanstd(vals)/np.sqrt(len(vals)), fmt='|k', markersize=10)
+    ax.axvline(0, color='gray', linestyle='--', alpha=0.5)
+    ax.set_ylabel(l_label, fontsize=8, fontweight='bold')
+    ax.set_xlim([-2, 5]); ax.set_yticks([])
+
+def _plot_latency_hist_sync(ax, vals, color, is_last):
+    vals = vals[~np.isnan(vals)]
+    if vals.size > 0:
+        sns.histplot(vals, ax=ax, color=color, kde=True, element="step", alpha=0.3, linewidth=0)
+    ax.axvline(0, color='gray', linestyle='--', alpha=0.5)
+    ax.set_xlim([-2, 5]); ax.set_ylabel("")
+    if not is_last: ax.set_xticklabels([])
+
+def _add_reaction_time_column(fig, gs, beh, cs, total_rows):
+    rt_data = np.array(beh.get(f"{cs}ReactionTime", []))
+    rt_data = rt_data/1000
+    
+    if rt_data.size == 0: return
+
+    # Top: Line plot (no markers)
+    ax1 = fig.add_subplot(gs[0:int(total_rows/3), 8])
+    ax1.plot(rt_data, color='black', lw=1.5)
+    ax1.set_title(f"{cs} RT/Trial")
+
+    # Middle: Dist
+    ax2 = fig.add_subplot(gs[int(total_rows/3):int(2*total_rows/3), 8])
+    sns.histplot(rt_data, ax=ax2, color='black', alpha=0.2, kde=True)
+    ax2.set_title("RT Distribution")
+
+    # Bottom: Fast Dist (Fixed filter)
+    ax3 = fig.add_subplot(gs[int(2*total_rows/3):total_rows, 8])
+    fast_rt = rt_data[rt_data < 0.5]
+    if fast_rt.size > 0:
+        sns.histplot(fast_rt, ax=ax3, color='red', alpha=0.4, kde=True)
+    ax3.set_title(f'Fast RTs (n={len(fast_rt)})')
+
+
+
+#%% save_analysis_to_hdf5
+def save_analysis_to_hdf5(psth_data, psth_pooled_data, rt_data, Roi2Vis, sampling_rate, preW, StimPeriod, PeakWindow, subjectID, save_dir):
+    """
+    Saves raw traces, pooled traces, peak latencies, and peak magnitudes into a single HDF5 file.
+    """
+    h5_filename = os.path.join(save_dir, f"{subjectID}_preprocessed_results.h5")
+
+    # Automatic calculation of indices based on PeakWindow
+    # Assumes PeakWindow is [start_sec, end_sec] (e.g., [0, 5.0])
+    start_idx = int(preW + (PeakWindow[0] * sampling_rate))
+    end_idx = int(preW + (PeakWindow[1] * sampling_rate))
+
+    with h5py.File(h5_filename, 'w') as hf:
+        # 1. Metadata
+        hf.attrs['subjectID'] = subjectID
+        hf.attrs['sampling_rate'] = sampling_rate
+        hf.attrs['preW'] = preW
+        hf.attrs['StimPeriod'] = StimPeriod
+        hf.attrs['PeakWindow_sec'] = PeakWindow
+        hf.attrs['ROIs_Pooled'] = Roi2Vis
+
+        # 2. Create Groups
+        grp_traces = hf.create_group('psth_traces')
+        grp_pooled = hf.create_group('psth_pooledtraces')
+        grp_latencies = hf.create_group('peak_latencies')
+        grp_magnitudes = hf.create_group('peak_magnitudes')
+        grp_reactiontime = hf.create_group('reaction_time')
+        
+        # 3. Process Individual Traces and calculate metrics
+        # Save reaction time data
+        if rt_data is not None:
+            grp_reactiontime.create_dataset('reward_lick_latency_s', data=rt_data/1000)
+        
+        # Save the full 3D PSTH array, split by ROI [Time, ROI, Trial]
+        for key, data in psth_data.items():
+            if data is not None:
+                # Save individual ROI traces [Time, ROI, Trial]
+                grp_traces.create_dataset(key, data=data, compression='gzip', compression_opts=4)
+
+                # Calculate metrics for signal channels (Green/Red)
+                if key.startswith(('G_', 'R_')):
+                    subset = data[start_idx:end_idx, :, :]
+                    
+                    # Latency and Magnitude calculations [ROI, Trial]
+                    peak_idxs = np.argmax(subset, axis=0)
+                    latencies = peak_idxs / sampling_rate
+                    magnitudes = np.max(subset, axis=0)
+
+                    grp_latencies.create_dataset(key, data=latencies)
+                    grp_magnitudes.create_dataset(key, data=magnitudes)
+
+        # 4. Save Pooled Traces [Time, 1, TotalTrials]
+        for key, value in psth_pooled_data.items():
+            if value is not None:
+                grp_pooled.create_dataset(key, data=value, compression='gzip', compression_opts=4)
+
+    print(f"HDF5 successfully created at: {h5_filename}")
+    return h5_filename

@@ -26,16 +26,17 @@ import numpy as np
 # import json
 # import pandas as pd
 # from scipy.stats import sem
+import h5py
 
 #import PreprocessingFunctions2 as pf
 import FIPFunctions2 as fipf
 
 
-session_id = 'FIP_835527_2026-01-12_10-31-26'
+session_id = 'FIP_840205_2026-01-12_09-58-41'
 
 SaveDir = r'C:\output_data\results\results_' + session_id
 AnalDir = r'C:\output_data' + os.sep + session_id + os.sep + 'behavior'
-
+FibDir = r'C:\output_data' + os.sep + session_id + os.sep + 'fib'
 os.makedirs(SaveDir, exist_ok=True)
 
 # manually enter when the first reward trial that should actually be counted happened
@@ -44,7 +45,9 @@ first_rew_idx = 0           # 0 for 836733 12/3/25
 # choose which ROIs (fibers) to visualize
 #Roi2Vis=[0,1,2]
 Roi2Vis = [0,1]
-SaveFigs = 0
+
+SaveFigs = 1 # set to 1 to save generated plots in results directory, 0 to skip
+SaveResults = 1 # set to 1 to save preprocessed_results in fib directory, 0 to skip
 
 # params for pre-processing
 nFrame2cut = 100  #crop initial n frames
@@ -57,7 +60,7 @@ StimPeriod = 0.1 #sec for visualization, used to show time duration of rew deliv
 preW = 100 #nframes for PSTH (before event)
 postW = 300 #nframes for PSTH (after event)
 LickWindow = 5.0 #sec window length for Consummatory/Omission licks
-
+PeakWindow = [0, 5.0] # sec window length to search for peaks, relative to CS onset
 #%% Load the data
 # format for data1/2/3 = [m, n] array where m (rows) = number of timestamps and  
 # n (cols) = number of ROIs + 2 (first column = SoftwareTS, last column = HarpTS)
@@ -197,24 +200,40 @@ psth_data = fipf.generate_all_psths(G_dF_F, R_dF_F, Ctrl_dF_F, event_frames, tri
 #%% Pool data from each ROI together (ONLY IF RECORDING SITES ARE THE SAME)
 psth_pooled_data = fipf.pool_rois_in_psths(psth_data, Roi2Vis)
 
-    
+
+#%% Create a dictionary of timestamps for rewards and licks by CS type
+TSdict_CSrewarded = fipf.sort_timestamps_by_cs(TSdict, trial_data)
+
+#%% Calculate photometry peaks relative to CS onset, reward delivery, and first lick
+peak_results = fipf.calculate_fip_peaks(psth_data, TSdict_CSrewarded, sampling_rate, preW, PeakWindow)
+
+#%%
+fipf.plot_latency_comparison(peak_results, trial_type='CS3R', roi_idx=0)
+
+
 #%% Plot PSTHs for each trial type with separate ROIs
 # Plot CS1
 # CS1 Rewarded
 if psth_data.get('G_CS1R_base') is not None:
-    fig_psth_CS1R = fipf.plot_roi_psth_summary(psth_data, Roi2Vis, sampling_rate, StimPeriod, preW=100, trial_type='CS1R')
-    fig_peaks_CS1R = fipf.plot_time_to_peak_summary(psth_data, Roi2Vis, sampling_rate, preW, trial_type='CS1R')
-
+    fig_psth_CS1R = fipf.plot_roi_psth_summary(psth_data, subjectID, Roi2Vis, sampling_rate, StimPeriod, preW, 
+                                               trial_type='CS1R')
+    fig_peaks_CS1R = fipf.plot_time_to_peak_summary(psth_data, subjectID, Roi2Vis, sampling_rate, preW, 
+                                                    trial_type='CS1R', search_window=PeakWindow)
     if SaveFigs == 1:
-        fig_psth_CS1R.savefig(os.path.join(SaveDir, f"{subjectID}_CS1R_ROI-Summary.pdf"), bbox_inches='tight')
+        fig_psth_CS1R.savefig(os.path.join(SaveDir, f"{subjectID}_CS1R_PSTH_ROI-Summary.pdf"), bbox_inches='tight')
+        fig_peaks_CS1R.savefig(os.path.join(SaveDir, f"{subjectID}_CS1R_peaks_ROI-Summary.pdf"), bbox_inches='tight')
 else:
     print("Skipping CS1R: No trials found.")
 
 # CS1 Unrewarded
 if psth_data.get('G_CS1UR_base') is not None:
-    fig_CS1UR = fipf.plot_roi_psth_summary(psth_data, Roi2Vis, sampling_rate, StimPeriod, preW=100, trial_type='CS1UR')
+    fig_psth_CS1UR = fipf.plot_roi_psth_summary(psth_data, subjectID, Roi2Vis, sampling_rate, StimPeriod, preW, 
+                                           trial_type='CS1UR')
+    fig_peaks_CS1UR = fipf.plot_time_to_peak_summary(psth_data, subjectID, Roi2Vis, sampling_rate, preW, 
+                                                    trial_type='CS1UR', search_window=PeakWindow)
     if SaveFigs == 1:
-        fig_CS1UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS1UR_ROI-Summary.pdf"), bbox_inches='tight')
+        fig_psth_CS1UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS1UR_PSTH_ROI-Summary.pdf"), bbox_inches='tight')
+        fig_peaks_CS1UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS1UR_peaks_ROI-Summary.pdf"), bbox_inches='tight')
 else:
     print("Skipping CS1UR: No trials found.")
     
@@ -223,37 +242,80 @@ else:
 # Plot CS2
 # CS2 Rewarded
 if psth_data.get('G_CS2R_base') is not None:
-    fig_CS2R = fipf.plot_roi_psth_summary(psth_data, Roi2Vis, sampling_rate, StimPeriod, preW=100, trial_type='CS2R')
+    fig_psth_CS2R = fipf.plot_roi_psth_summary(psth_data, subjectID, Roi2Vis, sampling_rate, StimPeriod, preW, 
+                                               trial_type='CS2R')
+    fig_peaks_CS2R = fipf.plot_time_to_peak_summary(psth_data, subjectID, Roi2Vis, sampling_rate, preW, 
+                                                    trial_type='CS2R', search_window=PeakWindow)
     if SaveFigs == 1:
-        fig_CS2R.savefig(os.path.join(SaveDir, f"{subjectID}_CS2R_ROI-Summary.pdf"), bbox_inches='tight')
+        fig_psth_CS2R.savefig(os.path.join(SaveDir, f"{subjectID}_CS2R_PSTH_ROI-Summary.pdf"), bbox_inches='tight')
+        fig_peaks_CS2R.savefig(os.path.join(SaveDir, f"{subjectID}_CS2R_peaks_ROI-Summary.pdf"), bbox_inches='tight')
 else:
     print("Skipping CS2R: No trials found.")
+    
 # CS2 Unrewarded
 if psth_data.get('G_CS2UR_base') is not None:
-    fig_CS2UR = fipf.plot_roi_psth_summary(psth_data, Roi2Vis, sampling_rate, StimPeriod, preW=100, trial_type='CS2UR')
+    fig_psth_CS2UR = fipf.plot_roi_psth_summary(psth_data, subjectID, Roi2Vis, sampling_rate, StimPeriod, preW, 
+                                                trial_type='CS2UR')
+    fig_peaks_CS2UR = fipf.plot_time_to_peak_summary(psth_data, subjectID, Roi2Vis, sampling_rate, preW,
+                                                     trial_type='CS2UR', search_window=PeakWindow)
     if SaveFigs == 1:
-        fig_CS2UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS2UR_ROI-Summary.pdf"), bbox_inches='tight')
+        fig_psth_CS2UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS2UR_PSTH_ROI-Summary.pdf"), bbox_inches='tight')
+        fig_peaks_CS2UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS2UR_peaks_ROI-Summary.pdf"), bbox_inches='tight')
 else:
     print("Skipping CS2UR: No trials found.")
     
+
     
     
 # Plot CS3
 # CS3 Rewarded
 if psth_data.get('G_CS3R_base') is not None:
-    fig_CS3R = fipf.plot_roi_psth_summary(psth_data, Roi2Vis, sampling_rate, StimPeriod, preW=100, trial_type='CS3R')
+    fig_psth_CS3R = fipf.plot_roi_psth_summary(psth_data, subjectID, Roi2Vis, sampling_rate, StimPeriod, preW, 
+                                               trial_type='CS3R')
+    fig_peaks_CS3R = fipf.plot_time_to_peak_summary(psth_data, subjectID, Roi2Vis, sampling_rate, preW, 
+                                                    trial_type='CS3R', search_window=PeakWindow)
     if SaveFigs == 1:
-        fig_CS3R.savefig(os.path.join(SaveDir, f"{subjectID}_CS3R_ROI-Summary.pdf"), bbox_inches='tight')
+        fig_psth_CS3R.savefig(os.path.join(SaveDir, f"{subjectID}_CS3R_PSTH_ROI-Summary.pdf"), bbox_inches='tight')
+        fig_peaks_CS3R.savefig(os.path.join(SaveDir, f"{subjectID}_CS3R_peaks_ROI-Summary.pdf"), bbox_inches='tight')
 else:
     print("Skipping CS3R: No trials found.")
+    
 # CS3 Unrewarded
 if psth_data.get('G_CS3UR_base') is not None:
-    fig_CS3UR = fipf.plot_roi_psth_summary(psth_data, Roi2Vis, sampling_rate, StimPeriod, preW=100, trial_type='CS3UR')
+    fig_psth_CS3UR = fipf.plot_roi_psth_summary(psth_data, subjectID, Roi2Vis, sampling_rate, StimPeriod, preW, 
+                                                trial_type='CS3UR')
+    fig_peaks_CS3UR = fipf.plot_time_to_peak_summary(psth_data, subjectID, Roi2Vis, sampling_rate, preW,
+                                                     trial_type='CS3UR', search_window=PeakWindow)
     if SaveFigs == 1:
-        fig_CS3UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS3UR_ROI-Summary.pdf"), bbox_inches='tight')
+        fig_psth_CS3UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS3UR_PSTH_ROI-Summary.pdf"), bbox_inches='tight')
+        fig_peaks_CS3UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS3UR_peaks_ROI-Summary.pdf"), bbox_inches='tight')
 else:
     print("Skipping CS3UR: No trials found.")
-    
-    
 
-#%% Plot PSTHs for each trial type with pooled ROIs
+
+#%% Plot reaction time from reward delivery
+rt_data = fipf.calculate_and_plot_rt(TSdict, subjectID, SaveDir, save_figs=SaveFigs)
+
+
+#%% Big summary plot
+fipf.generate_all_trial_summaries(
+    psth_data, 
+    peak_results, 
+    TSdict_CSrewarded, 
+    Roi2Vis,          # Your list of ROIs to plot
+    sampling_rate, 
+    preW, 
+    SaveDir, 
+    subjectID,
+    StimPeriod
+)
+
+
+
+
+#%% Save preprocessed results to fib directory as HDF5
+
+# if SaveResults == 1:
+#     preprocessed_results = fipf.save_analysis_to_hdf5(psth_data, psth_pooled_data, rt_data, Roi2Vis, 
+#                                                       sampling_rate, preW, StimPeriod, PeakWindow, 
+#                                                       subjectID, FibDir)
