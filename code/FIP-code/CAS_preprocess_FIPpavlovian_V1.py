@@ -32,7 +32,7 @@ import h5py
 import FIPFunctions2 as fipf
 
 
-session_id = 'FIP_840205_2026-01-12_09-58-41'
+session_id = 'FIP_835527_2026-01-12_10-31-26'
 
 SaveDir = r'C:\output_data\results\results_' + session_id
 AnalDir = r'C:\output_data' + os.sep + session_id + os.sep + 'behavior'
@@ -315,7 +315,7 @@ fipf.generate_all_trial_summaries(
 
 #%% Save preprocessed results to fib directory as HDF5
 
-# if SaveResults == 1:
-#     preprocessed_results = fipf.save_analysis_to_hdf5(psth_data, psth_pooled_data, rt_data, Roi2Vis, 
-#                                                       sampling_rate, preW, StimPeriod, PeakWindow, 
-#                                                       subjectID, FibDir)
+if SaveResults == 1:
+    preprocessed_results = fipf.save_analysis_to_hdf5(FibDir, subjectID, psth_data, psth_pooled_data, 
+                              rt_data, peak_results, TSdict, TSdict_CSrewarded, 
+                              Roi2Vis, sampling_rate, preW, StimPeriod)

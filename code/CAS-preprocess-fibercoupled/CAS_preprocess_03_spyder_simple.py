@@ -50,6 +50,7 @@ import ast
 from PIL import Image
 from pathlib import Path
 import logging
+import tifffile
 import CAS_preprocess_03_fibercoupled as tiff_to_intensity
 
 # %% variables
@@ -71,6 +72,15 @@ if not calib_file.exists():
 
 
 #%% load session_params.csv and fix framestamp rollover
+# NOTE: load_session_params drops the last frame in the metadata file since this is often corrupt!
+    # num_frames = array of size x where x is the number of recordings in the folder 
+            # values are # of frames in a given recording
+    # times_raw = list of size x where x is the number of recordings in the folder
+            # each entry is a time series array (using camera timestamps) the length of corresponding num_frames
+    # frames_raw = list of size x where x is the number of recordings in the folder
+            # each entry is an array of frame counts the length of corresponding num_frames (use this to ID frame drops)
+    # metadata_files = list of size x where x is the number of recordings in the folder  
+            # each entry is a path to the metadata file for the corresponding recording
 num_frames, times_raw, frames_raw, metadata_files = tiff_to_intensity.load_session_params(results_dir)
 
 # identify the session param files that were found in the folder, there should be 1 per recording
@@ -86,7 +96,8 @@ for i, (t_arr, f_arr) in enumerate(zip(times_raw, frames_raw)):
 
 
 #%% check for dropped frames and repair by interpolating time stamps
-
+# frames = list where each entry contains frame counts for each recording after drop correction
+# times = list where each entry contains camera timestamps for each recording, interpolated after drop correction
 frames, times = tiff_to_intensity.check_frame_drop(frames_raw, times_raw)
 
 for i, (t_arr, f_arr) in enumerate(zip(times, frames)):
@@ -95,11 +106,7 @@ for i, (t_arr, f_arr) in enumerate(zip(times, frames)):
     print(f"  Frames (drop-corrected): length = {f_arr.size}, example [-5:] = {f_arr[-5:]}")    
     
     
-#%% read in camera dimensions and offsets, convert to integers
-metadata = pd.read_csv(metadata_files[0])
-width = metadata.Width[0]
-height = metadata.Height[0]
-# Use XOffset if available (Bonsai node V3.2) or Left if not (V4)
+
 #%% read in camera dimensions and offsets, convert to integers
 metadata = pd.read_csv(metadata_files[0])
 width = metadata.Width[0]
@@ -131,7 +138,10 @@ pts1 = np.float32([pt1, pt2, pt3])
 pts2 = np.float32([pt4, pt5, pt6])
 M2 = cv.getAffineTransform(pts1,pts2)
 
-
+# pre-compute the combined matrix transformation
+M1_3x3 = np.vstack([M1, [0,0,1]])
+M2_3x3 = np.vstack([M2, [0,0,1]])
+M_combined = np.dot(M2_3x3, M1_3x3)[:2, :] # result is a 2x3
 #%% check tiff count vs metadata frame count for alignment concerns
 # Configure logging to track alignment issues
 logging.basicConfig(level=logging.INFO)
@@ -150,6 +160,7 @@ folders = natsorted([f for f in results_dir.iterdir() if f.is_dir() and f.name.s
 print('\nTiff folders:')
 print(folders)
 
+#%%
 # loop over all tiff folders:
 for i, folder_path in enumerate(folders):
     # 1. Gather all TIFFs in this recording fragment
@@ -182,8 +193,6 @@ for i, folder_path in enumerate(folders):
         )
 
 
-
-
 #%% extract data from tiff stacks
 
 # initialize storage lists to contain n x m arrays where n = # of frames and m = width of image
@@ -198,9 +207,9 @@ for i, folder_path in enumerate(folders):
 
     # 1. Pre-allocate NumPy arrays for this segment
     # Shape: (Frames, Width of the Fiber)
-    temp_fiber1 = np.zeros((frames_to_process, width), dtype=np.float64)
-    temp_fiber2 = np.zeros((frames_to_process, width), dtype=np.float64)
-    temp_peaks = np.zeros(frames_to_process, dtype=np.float64)
+    temp_fiber1 = np.zeros((frames_to_process, width), dtype=np.float32) # 1/27/26 - changing these from float64 to float 32
+    temp_fiber2 = np.zeros((frames_to_process, width), dtype=np.float32)
+    temp_peaks = np.zeros(frames_to_process, dtype=np.float32)
 
     current_frame = 0
     print(f"\nSegment {i}: Processing {frames_to_process} frames for {folder_path.name}...")
@@ -210,51 +219,48 @@ for i, folder_path in enumerate(folders):
         if current_frame >= frames_to_process:
             break
             
-        # Load the entire stack (multi-page TIFF)
-        stack = io.imread(tiff_path)
-        # Ensure stack is 3D (may be 2D if it only contains 1 frame)
-        if stack.ndim == 2:
-            stack = stack[np.newaxis, ...]
-        # Define region used for background subtraction
-        background = np.mean(stack[:,0:20,0:200]) # top left corner pixels used for bg subtract
-        
         print(f"           Starting stack {tiff_path.name}")
-        for f_idx in range(stack.shape[0]):
-            if current_frame >= frames_to_process:
-                break
+        
+        # NEW 1/27/26 uses tifffile to 'stream' ind frames and prevent crash from loading full image at once
+        with tifffile.TiffFile(tiff_path) as tif:
+            # Calculate background once per stack using the first frame
+            first_frame = tif.pages[0].asarray().astype(np.float32)
+            background = np.mean(first_frame[0:20, 0:200])
             
-            # Extract current frame and convert to float32 for math precision
-            frame = stack[f_idx].astype(np.float32)
+            for page in tif.pages:
+                if current_frame >= frames_to_process:
+                    break
+                
+                # stream the current frame
+                frame = page.asarray().astype(np.float32)
+                
+                # OPTIONAL: subtract background (if desired, Smrithi had this commented out)
+                # frame = frame - background
+                
+                # single-step transformation
+                frame_aligned = cv.warpAffine(frame, M_combined, (width, height))
+                
+                
+                # 4. Extract Fiber Regions
+                # identify the upper and lower bounds of each fiber
+                # NOTE: upper bound [1] is the smaller number, must go from smaller to larger in slicing
+                f1_zone = frame_aligned[fiber1_location[1]:fiber1_location[0], :]
+                f2_zone = frame_aligned[fiber2_location[1]:fiber2_location[0], :]
             
-            
-            # 3. Apply Transformations
-            # M1 = Rotation, M2 = Affine Alignment
-            frame_rotated = cv.warpAffine(frame, M1, (width, height))
-            frame_aligned = cv.warpAffine(frame_rotated, M2, (width, height))
-            # subtract background (if desired, Smrithi had this commented out)
-            frame_aligned = frame_aligned #- background
-            
-            # 4. Extract Fiber Regions
-            # identify the upper and lower bounds of each fiber
-            f1_zone = frame_aligned[fiber1_location[1]:fiber1_location[0], :]
-            f2_zone = frame_aligned[fiber2_location[1]:fiber2_location[0], :]
-            
-            # Take the mean across the Y-axis (height of the fiber) to get a 1D profile
-            f1_mean = np.mean(f1_zone, axis=0)
-            f2_mean = np.mean(f2_zone, axis=0)
+                # Take the mean across the Y-axis (height of the fiber) to get a 1D profile
+                f1_mean = np.mean(f1_zone, axis=0)
+                f2_mean = np.mean(f2_zone, axis=0)
 
-            # 5. Peak Detection (using fiber 2)
-            p_idx, _ = find_peaks(f2_mean, height=200, distance=200) 
-            best_peak = 0
-            if len(p_idx) > 0:
-                best_peak = p_idx[np.argmax(f2_mean[p_idx])]
+                # 5. Peak Detection (using fiber 2)
+                p_idx, _ = find_peaks(f2_mean, height=200, distance=200) 
+                best_peak = p_idx[np.argmax(f2_mean[p_idx])] if len(p_idx) > 0 else 0
             
-            # 6. Assign to pre-allocated arrays
-            temp_fiber1[current_frame, :] = f1_mean
-            temp_fiber2[current_frame, :] = f2_mean
-            temp_peaks[current_frame] = best_peak
+                # 6. Assign to pre-allocated arrays
+                temp_fiber1[current_frame, :] = f1_mean
+                temp_fiber2[current_frame, :] = f2_mean
+                temp_peaks[current_frame] = best_peak
             
-            current_frame += 1
+                current_frame += 1
 
     # Append the completed segment arrays to our master lists
     fiber1.append(temp_fiber1)
@@ -268,190 +274,73 @@ for i, folder_path in enumerate(folders):
 print("\nData extraction complete.")
 
 
-#%%
-fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+#%% Plot an example frame before + after affine transformation
+fig, axes = plt.subplots(1, 2, figsize=(10, 5))
 im0 = axes[0].imshow(np.array(frame), aspect='auto', vmin=0, vmax=6000)
 axes[0].set(xlabel='Camera pixels', ylabel='Camera pixels', title='Raw Frame')
 axes[0].grid(False)
 
-im1 = axes[1].imshow(np.array(frame_rotated), aspect='auto', vmin=0, vmax=6000)
-axes[1].set(xlabel='Camera pixels', ylabel='Camera pixels', title='Rotated Frame')
-axes[1].grid(False)
+# im1 = axes[1].imshow(np.array(frame_rotated), aspect='auto', vmin=0, vmax=6000)
+# axes[1].set(xlabel='Camera pixels', ylabel='Camera pixels', title='Rotated Frame')
+# axes[1].grid(False)
 
-im2 = axes[2].imshow(np.array(frame_aligned), aspect='auto', vmin=0, vmax=6000)
-axes[2].set(xlabel='Camera pixels', ylabel='Camera pixels', title='Final Transformed Frame')
-axes[2].grid(False)
+im1 = axes[1].imshow(np.array(frame_aligned), aspect='auto', vmin=0, vmax=6000)
+axes[1].set(xlabel='Camera pixels', ylabel='Camera pixels', title='Final Transformed Frame')
+axes[1].grid(False)
 
 plt.show()
 
+#%% Plot fiber bounds to check ROI alignment
+# 1. Create a mean image from a subset of frames (or use the calibration image)
+# We use the first segment 'temp_fiber1' as a reference
+sample_frame = frame_aligned.copy() # Use the last processed frame from your loop
 
-#%% 
-# numFrames = np.zeros(len(metadata_files), dtype=int) # store the number of frames in each metadata file
-# time = [] # initialize to store camera timestamps
-# Frames = [] # initialize to store corrected framestamps after handling rollovers
+plt.figure(figsize=(12, 6))
+plt.imshow(sample_frame, cmap='gray', aspect='auto')
 
-# # Helper: build unified timestamps from available columns
-# def build_timestamps(df: pd.DataFrame) -> np.ndarray:
-#     cols = df.columns
-#     if {"CameraTimestampSeconds", "CameraTimestampMicroSeconds"}.issubset(cols):
-#         ts = df["CameraTimestampSeconds"].astype("float64") \
-#              + df["CameraTimestampMicroSeconds"].astype("float64") * 1e-6
-#     elif "CameraTimestamp" in cols:
-#         ts = df["CameraTimestamp"].astype("float64")
-#     else:
-#         raise KeyError("Metadata missing timestamp columns: expected either "
-#                        "('CameraTimestampSeconds' + 'CameraTimestampMicroSeconds') or 'CameraTimestamp'.")
-#     return ts.to_numpy()
+# 2. Draw the ROI boundaries for Fiber 1
+plt.axhline(y=fiber1_location[0], color='r', linestyle='--', alpha=0.8, label='Fiber 1 Bounds')
+plt.axhline(y=fiber1_location[1], color='r', linestyle='--', alpha=0.8)
 
-# # Helper: correct 16-bit framestamp rollover
-# def correct_framestamps(df: pd.DataFrame) -> np.ndarray:    # input = pandas df, output = numpy array
-#     if "Framestamp" not in df.columns:
-#         raise KeyError("Metadata missing 'Framestamp' column.")
+# 3. Draw the ROI boundaries for Fiber 2
+plt.axhline(y=fiber2_location[0], color='cyan', linestyle='--', alpha=0.8, label='Fiber 2 Bounds')
+plt.axhline(y=fiber2_location[1], color='cyan', linestyle='--', alpha=0.8)
 
-#     # Use uint32 to store raw counter safely, then int64 for corrected indices
-#     fs = df["Framestamp"].to_numpy(dtype=np.uint32)
-#     fs_signed = fs.astype(np.int64) # convert to signed type before calculating diffs
-#     # Detect rollovers: when the counter decreases from one frame to the next
-#     # Example: [..., 65535, 0, 1, ...] -> np.diff < 0 at the rollover boundary
-#     diffs = np.diff(fs_signed)
-#     rollover_points = np.r_[False, diffs < 0]           # prepend False for the first frame
-#     rollover_count = np.cumsum(rollover_points).astype(np.int64)
+plt.title(f"ROI Alignment Check: {session_id}")
+plt.xlabel("Wavelength / Pixels (Width)")
+plt.ylabel("Vertical Position (Height)")
+plt.legend(loc='upper right')
 
-#     # Each rollover adds 65536 to subsequent frames
-#     fs_corrected = fs.astype(np.int64) + rollover_count * 65536
-
-#     return fs_corrected
-
-# # Main loop over metadata files
-# for i, meta_path in enumerate(metadata_files):
-#     # pandas can read Path objects directly
-#     metadata = pd.read_csv(meta_path)
-
-#     # Count frames (rows) robustly
-#     numFrames[i] = int(metadata.shape[0])
-
-#     # Build timestamps and corrected framestamps
-#     ts = build_timestamps(metadata)
-#     fs_corr = correct_framestamps(metadata)
-
-#     time.append(ts)
-#     Frames.append(fs_corr)
-
-# # (Optional) Sanity checks/diagnostics
-# print(f"Read {len(metadata_files)} metadata file(s).")
-# print("Frames per file:", numFrames.tolist())
-
-# # Example: show detected rollovers per file
-# rollovers_per_file = []
-
-# for i, meta_path in enumerate(metadata_files):
-#     md = pd.read_csv(meta_path)
-#     fs_i = md["Framestamp"].astype(np.int64).to_numpy()
-#     diffs = np.diff(fs_i)
-#     rollover_points = diffs < 0
-#     rollovers_per_file.append(int(rollover_points.sum()))  # number of True values
-# print("Detected rollovers per file:", rollovers_per_file)
+# Zoom in to the fiber areas to see the tilt better
+plt.ylim(max(fiber2_location)+20, min(fiber1_location)-20) 
+plt.show()
 
 
 
 
 
+#%% Set order of lasers and interleave into individual laser channels
 
+lut_pix = pd.read_hdf(results_dir/'pixel_to_nm.hdf5', key='Camera_pixel', more='r')
+lut_wav = pd.read_hdf(results_dir/'pixel_to_nm.hdf5', key='Wavelength_nm', more='r')
+wavelength = w.to_numpy()
+camera_px = c.to_numpy()
+lasers = [405,445,473,514,561]
 
+laser_order = []
+for i in range(len(peaks)):
+    l_order = np.zeros(len(peaks[i]))
+    for j in range(len(peaks[i])):
+        laser_pix = min(camera_px, key=lambda x:abs(x-peaks[i][j]-Xoffset))
+        camera_pix = np.where(camera_px>=laser_pix)
+        p = camera_pix[-1]
+        p = p[-1]
+        temp_laser = min(lasers, key=lambda x:abs(x-wavelength[p]))
+        l_order[j] = temp_laser
+    laser_order.append(l_order)
+print(laser_order)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# %% Get all Tiff directories
-files = os.listdir(results_dir)
-print(files)
-folders = []
-
-# Put all directories containing 'Tiff' into 'folders'
-for entry in os.scandir(results_dir):
-    if entry.is_dir() and 'Tiff' in entry.name:
-        folders.append(entry.name)
-folders = natsorted(folders)
-print(folders)
-
-# %% # --- Initialize storage lists ---
-fiber1 = []
-fiber2 = []
-peaks = []
-
-tiffbatch = 1000  # number of frames per Tiff file
-
-# Loop over each folder containing Tiff stacks
-for folder_name in folders:
-    folder_path = os.path.join(results_dir, folder_name)
-    tiff_files = natsorted([f for f in os.listdir(folder_path) if f.endswith('.tif')])
-    
-    num_files = len(tiff_files)
-    # Note: need to figure out how to index current time array
-    #lenToUse = min(num_files, math.floor(len(time[i])/1000))  # number of Tiffs to process; adjust as needed
-    
-    print(f"Processing folder: {folder_name}")
-    print(f"  Total TIFFs detected: {num_files}")
-    print(f"  TIFFs that will be processed: {lenToUse}")
-
-    # Pre-allocate arrays
-    sz_x = tiffbatch * lenToUse  # total frames (frames per tiff x number of tiffs)
-    sz_y = width  # width of each frame
-    tempfiber1 = np.zeros((sz_x, sz_y)) # will hold fiber1 values for each tiff
-    tempfiber2 = np.zeros((sz_x, sz_y)) # will hold fiber2 values for each tiff
-    peak_array = np.zeros(sz_x) # will hold detected peak positions for each tiff
-
-    # Loop over selected Tiff files in the current Tiff folder
-    for t_idx, tiff_name in enumerate(tiff_files[:lenToUse]):
-        tiff_path = os.path.join(folder_path, tiff_name) # create path to current tiff stack
-        tiff_stack = io.imread(tiff_path).astype(float) # read in the current tiff stack
-        num_frames = tiff_stack.shape[0]
-
-        for f_idx in range(num_frames):
-            # Apply rotation 
-            temp_rotated = cv.warpAffine(tiff_stack[f_idx, :, :], M1, (cols, rows))
-            # Apply affine transformation
-            img = cv.warpAffine(temp_rotated, M2, (cols, rows))
-            
-            # Extract fiber regions
-            fiber1_m = np.mean(img[fiber1_location[1]:fiber1_location[0], :], axis=0)
-            fiber2_m = np.mean(img[fiber2_location[1]:fiber2_location[0], :], axis=0)
-
-            # Detect peaks for fiber2
-            temp_peak, _ = find_peaks(fiber2_m, height=200, distance=200) 
-            if len(temp_peak) > 1:
-                max_idx = np.argmax(fiber2_m[temp_peak])
-                temp_peak = temp_peak[max_idx]
-            # elif len(temp_peak) == 0:
-            #     temp_peak = 0  # default if no peak found
-
-            # Store results
-            frame_index = t_idx * tiffbatch + f_idx
-            tempfiber1[frame_index, :] = fiber1_m
-            tempfiber2[frame_index, :] = fiber2_m
-            peak_array[frame_index] = temp_peak
-
-    # Append processed data for this folder
-    fiber1.append(tempfiber1)
-    fiber2.append(tempfiber2)
-    peaks.append(peak_array)
-
-# Truncate time arrays to match fiber frame counts
-for i in range(len(time)):
-    if len(time[i]) > fiber1[i].shape[0]:
-        time[i] = time[i][:fiber1[i].shape[0]]
-
-
+# Plot the peaks to check if the laser order is correct
+for i in range(len(peaks)):
+    plt.plot(peaks[i],'.')
+plt.show()

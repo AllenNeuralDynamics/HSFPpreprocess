@@ -1306,60 +1306,57 @@ def _add_reaction_time_column(fig, gs, beh, cs, total_rows):
 
 
 #%% save_analysis_to_hdf5
-def save_analysis_to_hdf5(psth_data, psth_pooled_data, rt_data, Roi2Vis, sampling_rate, preW, StimPeriod, PeakWindow, subjectID, save_dir):
+def save_analysis_to_hdf5(save_dir, subjectID, psth_data, psth_pooled_data, 
+                          rt_data, peak_results, TSdict, TSdict_CSrewarded, 
+                          Roi2Vis, sampling_rate, preW, StimPeriod):
     """
-    Saves raw traces, pooled traces, peak latencies, and peak magnitudes into a single HDF5 file.
+    Saves all photometry analysis data and metadata into a single HDF5 file.
     """
-    h5_filename = os.path.join(save_dir, f"{subjectID}_preprocessed_results.h5")
-
-    # Automatic calculation of indices based on PeakWindow
-    # Assumes PeakWindow is [start_sec, end_sec] (e.g., [0, 5.0])
-    start_idx = int(preW + (PeakWindow[0] * sampling_rate))
-    end_idx = int(preW + (PeakWindow[1] * sampling_rate))
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_name = f"{subjectID}_preprocessed_{timestamp}.h5"
+    h5_filename = os.path.join(save_dir, file_name)
+    
+    print(f"Saving analysis data to {h5_filename}...")
 
     with h5py.File(h5_filename, 'w') as hf:
-        # 1. Metadata
+        # 1. Metadata / Attributes
         hf.attrs['subjectID'] = subjectID
         hf.attrs['sampling_rate'] = sampling_rate
         hf.attrs['preW'] = preW
         hf.attrs['StimPeriod'] = StimPeriod
-        hf.attrs['PeakWindow_sec'] = PeakWindow
-        hf.attrs['ROIs_Pooled'] = Roi2Vis
+        hf.create_dataset('Roi2Vis', data=np.array(Roi2Vis))
 
-        # 2. Create Groups
-        grp_traces = hf.create_group('psth_traces')
-        grp_pooled = hf.create_group('psth_pooledtraces')
-        grp_latencies = hf.create_group('peak_latencies')
-        grp_magnitudes = hf.create_group('peak_magnitudes')
-        grp_reactiontime = hf.create_group('reaction_time')
-        
-        # 3. Process Individual Traces and calculate metrics
-        # Save reaction time data
+        # 2. PSTH Data (Groups for individual and pooled)
+        g_psth = hf.create_group('psth_data')
+        for key, val in psth_data.items():
+            if val is not None:
+                g_psth.create_dataset(key, data=val, compression="gzip")
+
+        g_pooled = hf.create_group('psth_pooled_data')
+        for key, val in psth_pooled_data.items():
+            if val is not None:
+                g_pooled.create_dataset(key, data=val, compression="gzip")
+
+        # 3. Peak Results (Group)
+        g_peaks = hf.create_group('peak_results')
+        for key, val in peak_results.items():
+            if val is not None:
+                g_peaks.create_dataset(key, data=val)
+
+        # 4. Reaction Time Data 
         if rt_data is not None:
-            grp_reactiontime.create_dataset('reward_lick_latency_s', data=rt_data/1000)
-        
-        # Save the full 3D PSTH array, split by ROI [Time, ROI, Trial]
-        for key, data in psth_data.items():
-            if data is not None:
-                # Save individual ROI traces [Time, ROI, Trial]
-                grp_traces.create_dataset(key, data=data, compression='gzip', compression_opts=4)
+            hf.create_dataset('rt_data', data=np.array(rt_data))
 
-                # Calculate metrics for signal channels (Green/Red)
-                if key.startswith(('G_', 'R_')):
-                    subset = data[start_idx:end_idx, :, :]
-                    
-                    # Latency and Magnitude calculations [ROI, Trial]
-                    peak_idxs = np.argmax(subset, axis=0)
-                    latencies = peak_idxs / sampling_rate
-                    magnitudes = np.max(subset, axis=0)
+        # 5. Timestamps (Groups for TSdict and TSdict_CSrewarded)
+        g_ts = hf.create_group('TSdict')
+        for key, val in TSdict.items():
+            if val is not None:
+                g_ts.create_dataset(key, data=np.array(val))
 
-                    grp_latencies.create_dataset(key, data=latencies)
-                    grp_magnitudes.create_dataset(key, data=magnitudes)
+        g_ts_rew = hf.create_group('TSdict_CSrewarded')
+        for key, val in TSdict_CSrewarded.items():
+            if val is not None:
+                g_ts_rew.create_dataset(key, data=np.array(val))
 
-        # 4. Save Pooled Traces [Time, 1, TotalTrials]
-        for key, value in psth_pooled_data.items():
-            if value is not None:
-                grp_pooled.create_dataset(key, data=value, compression='gzip', compression_opts=4)
-
-    print(f"HDF5 successfully created at: {h5_filename}")
+    print("Successfully saved all data to HDF5.")
     return h5_filename
