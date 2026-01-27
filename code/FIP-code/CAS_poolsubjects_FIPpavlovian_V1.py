@@ -11,6 +11,8 @@ import glob
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
+import scipy.stats as stats
+from scipy import signal
 
 import FIPFunctions_processed as fipf_p
 
@@ -115,7 +117,8 @@ for sid, data in cohort_data.items():
                     'psth': subject_psth, 
                     'peaks': subject_peaks
                 }
-#%% plot combined ROIs for each animal, compare animals to each other 
+                
+#%% plot avgd ROIs for each animal, compare animals to each other 
 # 2. Plotting: Compare Green vs Red for a specific trial type across the cohort
 target_tt = 'CS3R'  # Change this to any trial type you want to see
 # Get time axis from the first animal in the cohort
@@ -180,8 +183,8 @@ for target_tt in trial_types_to_plot:
     sns.despine(ax=ax_t)
     
     # Save Trace Figure
-    trace_path = os.path.join(SaveDir, f'GrandAverage_PSTH_{target_tt}.pdf')
-    fig_trace.savefig(trace_path, transparent=True, bbox_inches='tight')
+    trace_path = os.path.join(SaveDir, f'GrandAverage_PSTH_{target_tt}.svg')
+    fig_trace.savefig(trace_path, format='svg', transparent=True, bbox_inches='tight')
 
     
     # AGGREGATE DATA FOR PEAK
@@ -243,134 +246,196 @@ for target_tt in trial_types_to_plot:
     plt.suptitle(f"Cohort Peaks: {target_tt}", fontweight='bold')
     
     # Save the PDF
-    peak_save_path = os.path.join(SaveDir, f'GrandAverage_Peaks_{target_tt}.pdf')
-    fig_peaks.savefig(peak_save_path, transparent=True, bbox_inches='tight')
+    peak_save_path = os.path.join(SaveDir, f'GrandAverage_Peaks_{target_tt}.svg')
+    fig_peaks.savefig(peak_save_path, format='svg', transparent=True, bbox_inches='tight')
     
 
 
 
+#%% Plot trial-by-trial peak comparison
+print("\nRunning trial-by-trial correlation comparisons...")
 
+for target_tt in trial_types_to_plot:
+    all_trials_g_peaks = []
+    all_trials_r_peaks = []
 
-
-
-
-
-
-#%%
-target_tt = 'CS3R'  # The trial type to average across the cohort
-
-# 1. Collect one mean trace per subject
-grand_psth_g = []
-grand_psth_r = []
-
-for sid in cohort_summary:
-    # Get the mean trace for this animal (averaging its trials)
-    subject_mean_g = np.nanmean(cohort_summary[sid]['G'][target_tt]['psth'], axis=1)
-    subject_mean_r = np.nanmean(cohort_summary[sid]['R'][target_tt]['psth'], axis=1)
-    
-    grand_psth_g.append(subject_mean_g)
-    grand_psth_r.append(subject_mean_r)
-
-# Convert lists to 2D arrays: shape (Subjects, Time)
-grand_psth_g = np.array(grand_psth_g)
-grand_psth_r = np.array(grand_psth_r)
-
-n_subjects = grand_psth_g.shape[0]
-
-# 2. Plotting
-plt.figure(figsize=(10, 6))
-
-for data_arr, color, label in [(grand_psth_g, 'green', 'Green Signal'), 
-                               (grand_psth_r, 'red', 'Red Signal')]:
-    
-    # Calculate Grand Mean and Inter-Subject SEM
-    mean_trace = np.nanmean(data_arr, axis=0)
-    sem_trace = np.nanstd(data_arr, axis=0) / np.sqrt(n_subjects)
-    
-    # Plotting
-    plt.plot(time_x, mean_trace, color=color, lw=3, label=f'{label} (N={n_subjects} mice)')
-    plt.fill_between(time_x, mean_trace - sem_trace, mean_trace + sem_trace, 
-                     color=color, alpha=0.2, edgecolor='none')
-
-# Formatting
-plt.title(f"Grand Average: {target_tt}", fontsize=14, fontweight='bold')
-plt.axvline(0, color='black', linestyle='--', alpha=0.6)
-plt.axhline(0, color='black', lw=1, alpha=0.3)
-plt.xlabel("Time (s)", fontsize=12)
-plt.ylabel("Normalized Magnitude", fontsize=12)
-plt.legend(frameon=False)
-sns.despine() # Makes the plot look cleaner/published
-plt.show()
-
-#%% plot peak results for combined animals
-target_tt = 'CS3R'
-events = ['cs', 'rew', 'lick']
-event_labels = ['vs CS Onset', 'vs Reward', 'vs First Lick']
-
-# Storage
-# mag_data will only have 'G' and 'R' (since magnitude is independent of event alignment)
-mag_data = {'G': [], 'R': []}
-# lat_data will be nested by event
-lat_data = {e: {'G': [], 'R': []} for e in events}
-
-for sid, data in cohort_data.items():
-    rois = data['Roi2Vis']
-    peaks_all = data['peak_results']
-    
-    for sig in ['G', 'R']:
-        # 1. Handle Magnitudes (One per signal type)
-        m_key = f"{sig}_{target_tt}_base_peak_mag"
-        if m_key in peaks_all:
-            # Average ROIs -> Average Trials -> One value per mouse
-            sub_mag = np.nanmean(np.nanmean(peaks_all[m_key][rois, :], axis=0))
-            mag_data[sig].append(sub_mag)
+    for sid, data in cohort_data.items():
+        # 1. Gather Amplitude Coupling Data (Scatter Plot)
+        m_key_g = f"G_{target_tt}_base_peak_mag"
+        m_key_r = f"R_{target_tt}_base_peak_mag"
+        rois = data['Roi2Vis']
         
-        # 2. Handle Latencies (Relative to each event)
-        for event in events:
-            l_key = f"{sig}_{target_tt}_base_peak_{event}_lat"
-            if l_key in peaks_all:
-                # Average ROIs -> Average Trials -> One value per mouse
-                sub_lat = np.nanmean(np.nanmean(peaks_all[l_key][rois, :], axis=0))
-                lat_data[event][sig].append(sub_lat)
+        if m_key_g in data['peak_results'] and m_key_r in data['peak_results']:
+            # Trial-by-trial peaks (averaged across ROIs)
+            g_matrix = data['peak_results'][m_key_g][rois, :]
+            r_matrix = data['peak_results'][m_key_r][rois, :]
+            
+            # Flatten trials from all ROIs into a 1D array (3 ROIs x 20 trials becomes a 60-element vector)
+            g_pts = g_matrix.flatten()
+            r_pts = r_matrix.flatten()
+            
+            # save the peak magnitude for green and red for each trial
+            all_trials_g_peaks.extend(g_pts)
+            all_trials_r_peaks.extend(r_pts)
 
-# --- Plotting ---
-fig = plt.figure(figsize=(14, 6))
-gs = fig.add_gridspec(1, 2, width_ratios=[1, 2.5])
 
-# Plot A: Peak Magnitude (Only 2 bars: Green vs Red)
-ax1 = fig.add_subplot(gs[0])
-m_colors = ['green', 'red']
-for i, sig in enumerate(['G', 'R']):
-    vals = mag_data[sig]
-    mu, sem = np.nanmean(vals), np.nanstd(vals)/np.sqrt(len(vals))
-    ax1.bar(i, mu, yerr=sem, color=m_colors[i], alpha=0.6, capsize=5)
-    ax1.scatter([i]*len(vals), vals, color='black', edgecolors='white', zorder=3)
 
-ax1.set_xticks([0, 1])
-ax1.set_xticklabels(['Green', 'Red'])
-ax1.set_ylabel('Peak Magnitude (Z-score)')
-ax1.set_title('Subject Magnitudes', fontweight='bold')
+    # --- Plotting Panels ---
+    fig, ax1 = plt.subplots(figsize=(5, 5))
 
-# Plot B: Latencies (3 pairs of bars)
-ax2 = fig.add_subplot(gs[1])
-x = np.arange(len(events))
-width = 0.3
+    # Panel A: Amplitude Coupling
+    x, y = np.array(all_trials_r_peaks), np.array(all_trials_g_peaks)
+    mask = ~np.isnan(x) & ~np.isnan(y)
+    if len(x[mask]) > 1:
+        slope, intercept, r_val, p_val, _ = stats.linregress(x[mask], y[mask])
+        ax1.scatter(x[mask], y[mask], color='gray', alpha=0.3, s=15, edgecolors='none')
+        ax1.plot(x[mask], slope*x[mask] + intercept, color='red', label=f'R²={r_val**2:.3f}')
+        ax1.set_title(f'Amplitude Coupling ({target_tt})')
+        ax1.set_xlabel('Red Peak (Z)'); ax1.set_ylabel('Green Peak (Z)')
+        ax1.legend(frameon=False)
 
-for i, event in enumerate(events):
-    for j, (sig, col) in enumerate(zip(['G', 'R'], ['green', 'red'])):
-        vals = lat_data[event][sig]
-        if vals:
-            mu, sem = np.nanmean(vals), np.nanstd(vals)/np.sqrt(len(vals))
-            pos = i + (j - 0.5) * width
-            ax2.bar(pos, mu, width, yerr=sem, color=col, alpha=0.6, capsize=5)
-            ax2.scatter([pos]*len(vals), vals, color='black', edgecolors='white', zorder=3, s=20)
 
-ax2.set_xticks(x)
-ax2.set_xticklabels(event_labels)
-ax2.set_ylabel('Latency to Peak (s)')
-ax2.set_title('Latency Relative to Events', fontweight='bold')
-ax2.legend(['Green', 'Red'], loc='upper right')
+    sns.despine()
+    plt.tight_layout()
+    
+    # Save results
+    peakcomp_path = os.path.join(SaveDir, f'Peak-Amplitude_Trial-by-Trial_{target_tt}.svg')
+    plt.savefig(peakcomp_path, format='svg', transparent=True)
+    plt.show()
 
-sns.despine()
-plt.tight_layout()
-plt.show()
+
+
+
+#%% plot cross-correlation
+
+print("\n--- Running Temporal Lag (Cross-Correlogram) ---")
+for target_tt in trial_types_to_plot:
+    all_subject_xcorrs = []
+    fs = cohort_data[list(cohort_data.keys())[0]]['fs']
+
+    for sid, data in cohort_data.items():
+        # Using ROI-averaged PSTHs for a cleaner correlation signal
+        g_psths = cohort_summary[sid]['G'][target_tt]['psth'] 
+        r_psths = cohort_summary[sid]['R'][target_tt]['psth']
+        
+        trial_xcorrs = []
+        for t in range(g_psths.shape[1]):
+            g_tr, r_tr = g_psths[:, t], r_psths[:, t]
+            if np.isnan(g_tr).any() or np.isnan(r_tr).any(): continue
+            
+            # Normalize signals (Z-score)
+            g_n = (g_tr - np.mean(g_tr)) / (np.std(g_tr) + 1e-6)
+            r_n = (r_tr - np.mean(r_tr)) / (np.std(r_tr) + 1e-6)
+            
+            # Compute full cross-correlation
+            corr = signal.correlate(g_n, r_n, mode='full') / len(g_n)
+            trial_xcorrs.append(corr)
+            
+        if trial_xcorrs:
+            all_subject_xcorrs.append(np.mean(trial_xcorrs, axis=0))
+
+    # Calculate Axis
+    all_subject_xcorrs = np.array(all_subject_xcorrs)
+    n_pts = all_subject_xcorrs.shape[1]
+    lags = np.arange(-(n_pts // 2), (n_pts // 2) + 1)
+    lag_times = lags / fs
+
+    # Plotting
+    fig, ax = plt.subplots(figsize=(6, 5))
+    mu = np.nanmean(all_subject_xcorrs, axis=0)
+    sem = np.nanstd(all_subject_xcorrs, axis=0) / np.sqrt(len(all_subject_xcorrs))
+    
+    ax.plot(lag_times, mu, color='purple', lw=2)
+    ax.fill_between(lag_times, mu-sem, mu+sem, color='purple', alpha=0.2)
+    
+    # Visual cues for the peak
+    peak_lag = lag_times[np.argmax(mu)]
+    ax.axvline(0, color='black', linestyle='--', alpha=0.5)
+    ax.axvline(peak_lag, color='red', linestyle=':', label=f'Peak Lag: {peak_lag*1000:.1f}ms')
+    
+    ax.set_title(f'Cross-Correlogram: {target_tt}')
+    ax.set_xlabel('Lag (s) [Red leads < 0 > Green leads]')
+    ax.set_ylabel('Correlation Coefficient')
+    ax.set_xlim([-1.0, 1.0]) # Zoom in on the central second
+    ax.set_ylim([-0.1, 1.0])
+    ax.legend(frameon=False)
+    sns.despine()
+
+    plt.savefig(os.path.join(SaveDir, f'CrossCorr_Trace_{target_tt}.svg'), format='svg')
+    plt.show()
+    
+    
+    
+    
+    
+#%%
+    
+import random
+
+print("\n--- Running Temporal Lag with Shuffled Control ---")
+for target_tt in trial_types_to_plot:
+    all_subject_xcorrs = []
+    all_subject_shuffled = []
+    fs = cohort_data[list(cohort_data.keys())[0]]['fs']
+
+    for sid, data in cohort_data.items():
+        g_psths = cohort_summary[sid]['G'][target_tt]['psth'] 
+        r_psths = cohort_summary[sid]['R'][target_tt]['psth']
+        
+        n_trials = g_psths.shape[1]
+        if n_trials < 2: continue # Need at least 2 trials to shuffle
+        
+        # 1. REAL CORRELATION (Trial i vs Trial i)
+        trial_xcorrs = []
+        for t in range(n_trials):
+            g_n = (g_psths[:, t] - np.mean(g_psths[:, t])) / (np.std(g_psths[:, t]) + 1e-6)
+            r_n = (r_psths[:, t] - np.mean(r_psths[:, t])) / (np.std(r_psths[:, t]) + 1e-6)
+            trial_xcorrs.append(signal.correlate(g_n, r_n, mode='full') / len(g_n))
+        
+        # 2. SHUFFLED CONTROL (Trial i vs Trial j)
+        shuffled_indices = list(range(n_trials))
+        random.shuffle(shuffled_indices)
+        
+        shuff_xcorrs = []
+        for i, j in enumerate(shuffled_indices):
+            # Ensure we don't accidentally pick the same trial (i != j)
+            if i == j: j = (j + 1) % n_trials 
+            
+            g_n = (g_psths[:, i] - np.mean(g_psths[:, i])) / (np.std(g_psths[:, i]) + 1e-6)
+            r_n = (r_psths[:, j] - np.mean(r_psths[:, j])) / (np.std(r_psths[:, j]) + 1e-6)
+            shuff_xcorrs.append(signal.correlate(g_n, r_n, mode='full') / len(g_n))
+            
+        all_subject_xcorrs.append(np.mean(trial_xcorrs, axis=0))
+        all_subject_shuffled.append(np.mean(shuff_xcorrs, axis=0))
+
+    # --- PLOTTING ---
+    lag_times = np.arange(-(len(all_subject_xcorrs[0]) // 2), (len(all_subject_xcorrs[0]) // 2) + 1) / fs
+    
+    fig, ax = plt.subplots(figsize=(7, 5))
+    
+    # Plot Shuffled (Null)
+    shuff_mu = np.nanmean(all_subject_shuffled, axis=0)
+    ax.plot(lag_times, shuff_mu, color='gray', alpha=0.5, linestyle='--', label='Shuffled (Chance)')
+    
+    # Plot Real Data
+    real_mu = np.nanmean(all_subject_xcorrs, axis=0)
+    real_sem = np.nanstd(all_subject_xcorrs, axis=0) / np.sqrt(len(all_subject_xcorrs))
+    ax.plot(lag_times, real_mu, color='purple', lw=2, label='Real Data')
+    ax.fill_between(lag_times, real_mu-real_sem, real_mu+real_sem, color='purple', alpha=0.2)
+    
+    # Peak Annotation
+    peak_lag = lag_times[np.argmax(real_mu)]
+    ax.axvline(0, color='black', alpha=0.3)
+    ax.axhline(0, color='black', alpha=0.3)
+    ax.axvline(peak_lag, color='red', linestyle=':', label=f'Peak Lag: {peak_lag*1000:.1f}ms')
+    
+    ax.set_title(f'Temporal Lag vs Shuffled Control: {target_tt}')
+    ax.set_xlabel('Time (s)\n<--- Green Leads | Red Leads ---> ')
+    ax.set_ylabel('Correlation Coefficient')
+    ax.set_xlim([-1.0, 1.0])
+    ax.set_ylim([-0.1, 1.0])
+    ax.legend(frameon=False)
+    sns.despine()
+
+    plt.savefig(os.path.join(SaveDir, f'CrossCorr_Shuffled_{target_tt}.svg'), format='svg')
+    plt.show()
