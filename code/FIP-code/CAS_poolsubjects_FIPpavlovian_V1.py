@@ -179,6 +179,8 @@ for target_tt in trial_types_to_plot:
         ax_t.fill_between(time_x, mu-sem, mu+sem, color=col, alpha=0.2, edgecolor='none')
 
     ax_t.set_title(f'Grand Average PSTH: {target_tt}')
+    ax_t.set_ylabel('∆F/F')
+    ax_t.set_xlabel('Peri-Event Time (s)')
     ax_t.legend(frameon=False)
     sns.despine(ax=ax_t)
     
@@ -225,7 +227,7 @@ for target_tt in trial_types_to_plot:
             ax1.bar(i, mu, yerr=sem, color='green' if sig=='G' else 'red', alpha=0.5, capsize=5)
             ax1.scatter([i]*len(vals), vals, color='black', edgecolors='white', zorder=3, s=30)
     ax1.set_xticks([0, 1]); ax1.set_xticklabels(['Green', 'Red'])
-    ax1.set_ylabel('Peak Mag (Z-score)'); ax1.set_title('Magnitudes')
+    ax1.set_ylabel('Peak Amplitude (% ∆F/F)'); ax1.set_title('Peak Magnitudes')
 
     # Subplot B: Latencies
     ax2 = fig_peaks.add_subplot(gs[1])
@@ -240,7 +242,7 @@ for target_tt in trial_types_to_plot:
                 ax2.bar(p, mu, width, yerr=sem, color='green' if sig=='G' else 'red', alpha=0.5, capsize=5)
                 ax2.scatter([p]*len(vals), vals, color='black', edgecolors='white', zorder=3, s=20)
     ax2.set_xticks(x_pos); ax2.set_xticklabels(event_labels)
-    ax2.set_ylabel('Latency (s)'); ax2.set_title('Latencies')
+    ax2.set_ylabel('Peak Latency (s)'); ax2.set_title('Event-Relative Peak Latencies')
 
     sns.despine()
     plt.suptitle(f"Cohort Peaks: {target_tt}", fontweight='bold')
@@ -291,7 +293,7 @@ for target_tt in trial_types_to_plot:
         ax1.scatter(x[mask], y[mask], color='gray', alpha=0.3, s=15, edgecolors='none')
         ax1.plot(x[mask], slope*x[mask] + intercept, color='red', label=f'R²={r_val**2:.3f}')
         ax1.set_title(f'Amplitude Coupling ({target_tt})')
-        ax1.set_xlabel('Red Peak (Z)'); ax1.set_ylabel('Green Peak (Z)')
+        ax1.set_xlabel('Red Peak (% ∆F/F)'); ax1.set_ylabel('Green Peak (% ∆F/F)')
         ax1.legend(frameon=False)
 
 
@@ -307,69 +309,6 @@ for target_tt in trial_types_to_plot:
 
 
 #%% plot cross-correlation
-
-print("\n--- Running Temporal Lag (Cross-Correlogram) ---")
-for target_tt in trial_types_to_plot:
-    all_subject_xcorrs = []
-    fs = cohort_data[list(cohort_data.keys())[0]]['fs']
-
-    for sid, data in cohort_data.items():
-        # Using ROI-averaged PSTHs for a cleaner correlation signal
-        g_psths = cohort_summary[sid]['G'][target_tt]['psth'] 
-        r_psths = cohort_summary[sid]['R'][target_tt]['psth']
-        
-        trial_xcorrs = []
-        for t in range(g_psths.shape[1]):
-            g_tr, r_tr = g_psths[:, t], r_psths[:, t]
-            if np.isnan(g_tr).any() or np.isnan(r_tr).any(): continue
-            
-            # Normalize signals (Z-score)
-            g_n = (g_tr - np.mean(g_tr)) / (np.std(g_tr) + 1e-6)
-            r_n = (r_tr - np.mean(r_tr)) / (np.std(r_tr) + 1e-6)
-            
-            # Compute full cross-correlation
-            corr = signal.correlate(g_n, r_n, mode='full') / len(g_n)
-            trial_xcorrs.append(corr)
-            
-        if trial_xcorrs:
-            all_subject_xcorrs.append(np.mean(trial_xcorrs, axis=0))
-
-    # Calculate Axis
-    all_subject_xcorrs = np.array(all_subject_xcorrs)
-    n_pts = all_subject_xcorrs.shape[1]
-    lags = np.arange(-(n_pts // 2), (n_pts // 2) + 1)
-    lag_times = lags / fs
-
-    # Plotting
-    fig, ax = plt.subplots(figsize=(6, 5))
-    mu = np.nanmean(all_subject_xcorrs, axis=0)
-    sem = np.nanstd(all_subject_xcorrs, axis=0) / np.sqrt(len(all_subject_xcorrs))
-    
-    ax.plot(lag_times, mu, color='purple', lw=2)
-    ax.fill_between(lag_times, mu-sem, mu+sem, color='purple', alpha=0.2)
-    
-    # Visual cues for the peak
-    peak_lag = lag_times[np.argmax(mu)]
-    ax.axvline(0, color='black', linestyle='--', alpha=0.5)
-    ax.axvline(peak_lag, color='red', linestyle=':', label=f'Peak Lag: {peak_lag*1000:.1f}ms')
-    
-    ax.set_title(f'Cross-Correlogram: {target_tt}')
-    ax.set_xlabel('Lag (s) [Red leads < 0 > Green leads]')
-    ax.set_ylabel('Correlation Coefficient')
-    ax.set_xlim([-1.0, 1.0]) # Zoom in on the central second
-    ax.set_ylim([-0.1, 1.0])
-    ax.legend(frameon=False)
-    sns.despine()
-
-    plt.savefig(os.path.join(SaveDir, f'CrossCorr_Trace_{target_tt}.svg'), format='svg')
-    plt.show()
-    
-    
-    
-    
-    
-#%%
-    
 import random
 
 print("\n--- Running Temporal Lag with Shuffled Control ---")
@@ -439,3 +378,48 @@ for target_tt in trial_types_to_plot:
 
     plt.savefig(os.path.join(SaveDir, f'CrossCorr_Shuffled_{target_tt}.svg'), format='svg')
     plt.show()
+    
+#%% Plot decay constant
+# Storage for kinetics results
+kinetics_results = []
+
+for sid, data in cohort_data.items():
+    for target_tt in trial_types_to_plot:
+        # Get the mean PSTH for this subject/trial type
+        # (Assuming these are the baseline-subtracted traces)
+        g_mean = np.mean(cohort_summary[sid]['G'][target_tt]['psth'], axis=1)
+        r_mean = np.mean(cohort_summary[sid]['R'][target_tt]['psth'], axis=1)
+        
+        # Define the post-event window to find the peak (e.g., first 3 seconds)
+        search_window = (time_x >= 0) & (time_x <= 5)
+        g_peak_idx = np.argmax(g_mean[search_window]) + np.where(search_window)[0][0]
+        r_peak_idx = np.argmax(r_mean[search_window]) + np.where(search_window)[0][0]
+        
+        # Calculate Half-Lives
+        g_t12 = fipf_p.calculate_half_life(time_x, g_mean, g_peak_idx)
+        r_t12 = fipf_p.calculate_half_life(time_x, r_mean, r_peak_idx)
+        
+        kinetics_results.append({
+            'Subject': sid,
+            'TrialType': target_tt,
+            'Green_HalfLife': g_t12,
+            'Red_HalfLife': r_t12,
+            'Difference': g_t12 - r_t12
+        })
+
+# Convert to DataFrame for easy viewing
+import pandas as pd
+df_kinetics = pd.DataFrame(kinetics_results)
+print(df_kinetics.groupby('TrialType')[['Green_HalfLife', 'Red_HalfLife']].mean())
+
+#%% plot moment to moment brightness SINGLE TRIAL
+g_data = cohort_summary[sid]['G'][target_tt]['psth'][:, 1] # Trial 0
+r_data = cohort_summary[sid]['R'][target_tt]['psth'][:, 1] # Trial 0
+fipf_p.plot_brightness_scatter(g_data, r_data)
+
+#%% plot moment to moment brightness ALL TRIALS
+for sid, data in cohort_data.items():
+    for target_tt in trial_types_to_plot:
+        g_data = cohort_summary[sid]['G'][target_tt]['psth']
+        r_data = cohort_summary[sid]['R'][target_tt]['psth'] 
+        fipf_p.plot_global_moment_scatter(g_data, r_data, target_tt, sid)

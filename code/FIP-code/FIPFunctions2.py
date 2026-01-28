@@ -66,7 +66,7 @@ def tc_preprocess(tc, nFrame2cut, kernelSize, sampling_rate, degree, b_percentil
     tc_filtered = tc_lowcut(tc_filtered, sampling_rate)
     tc_poly = tc_polyfit(tc_filtered, sampling_rate, degree)
     tc_estim = tc_filtered - tc_poly
-    tc_base = tc_slidingbase(tc_filtered, sampling_rate)
+    tc_base = tc_slidingbase(tc_filtered, sampling_rate) # should this be tc_estim?
     #tc_dFoF = tc_dFF(tc_filtered, tc_base, b_percentile)
     tc_dFoF = tc_dFF(tc_estim, tc_base, b_percentile)    
     tc_dFoF = tc_filling(tc_dFoF, nFrame2cut)
@@ -382,18 +382,6 @@ def PSTHmaker(TC, Stims, preW, postW):
             #else:
                 #PSTHout = np.dstack([PSTHout, np.zeros(preW+postW)])
     return PSTHout
-
-#%% Define PSTH plotting function DEPRECATED
-
-# DEPRECATED: Use PSTHplot_single_roi for grid summaries
-
-# def PSTHplot(PSTH, MainColor, SubColor, LabelStr, preW, sampling_rate):
-#     plt.plot(np.arange(np.shape(PSTH)[1])/20 - preW/sampling_rate, np.mean(PSTH.T,axis=1),label=LabelStr,color = MainColor)
-#     #plt.plot(np.arange(np.shape(PSTH)[1])/20 - 5, np.mean(PSTH.T,axis=1) + np.std(PSTH.T,axis=1)/np.sqrt(np.shape(PSTH)[0]),color = SubColor, linestyle = "dotted")
-#     #plt.plot(np.arange(np.shape(PSTH)[1])/20 - 5, np.mean(PSTH.T,axis=1) - np.std(PSTH.T,axis=1)/np.sqrt(np.shape(PSTH)[0]),color = SubColor, linestyle = "dotted")
-#     y11 =  np.mean(PSTH.T,axis=1) + np.std(PSTH.T,axis=1)/np.sqrt(np.shape(PSTH)[0])
-#     y22 =  np.mean(PSTH.T,axis=1) - np.std(PSTH.T,axis=1)/np.sqrt(np.shape(PSTH)[0])
-#     plt.fill_between(np.arange(np.shape(PSTH)[1])/20 - preW/sampling_rate, y11, y22, facecolor=SubColor, alpha=0.5)
 
 
 #%% Define PSTH baseline subtraction (multi)

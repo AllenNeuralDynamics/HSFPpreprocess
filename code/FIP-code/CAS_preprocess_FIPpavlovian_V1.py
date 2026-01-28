@@ -54,7 +54,7 @@ nFrame2cut = 100  #crop initial n frames
 sampling_rate = 20 #individual channel (not total)
 kernelSize = 1 #median filter
 degree = 4 #polyfit
-b_percentile = 0.70 #To calculare F0, median of bottom x%
+b_percentile = 0.70 #To calculate F0, median of bottom x%
 
 StimPeriod = 0.1 #sec for visualization, used to show time duration of rew delivery`
 preW = 100 #nframes for PSTH (before event)
