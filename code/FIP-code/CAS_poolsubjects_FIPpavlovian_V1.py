@@ -252,6 +252,13 @@ for target_tt in trial_types_to_plot:
     fig_peaks.savefig(peak_save_path, format='svg', transparent=True, bbox_inches='tight')
     
 
+#%% Plot heat maps
+# plot subject-separated heat maps
+fipf_p.plot_trial_by_trial_heatmaps(cohort_summary, trial_types_to_plot, time_x, SaveDir)
+
+# plot chronological heat maps
+fipf_p.plot_interleaved_chronological_heatmaps(cohort_summary, trial_types_to_plot, time_x, SaveDir)
+
 
 
 #%% Plot trial-by-trial peak comparison
@@ -417,9 +424,55 @@ g_data = cohort_summary[sid]['G'][target_tt]['psth'][:, 1] # Trial 0
 r_data = cohort_summary[sid]['R'][target_tt]['psth'][:, 1] # Trial 0
 fipf_p.plot_brightness_scatter(g_data, r_data)
 
+
 #%% plot moment to moment brightness ALL TRIALS
 for sid, data in cohort_data.items():
     for target_tt in trial_types_to_plot:
         g_data = cohort_summary[sid]['G'][target_tt]['psth']
         r_data = cohort_summary[sid]['R'][target_tt]['psth'] 
         fipf_p.plot_global_moment_scatter(g_data, r_data, target_tt, sid)
+        
+        
+        
+        
+#%% cross-correlation sanity test
+# # Define a known lag
+# known_lag = 50
+# fs = 20 # sampling frequency in Hz
+# #t = np.arange(0, 1, 1/fs) # 1 second time base
+# t = time_x
+# x = np.sin(2 * np.pi * 5 * t) + np.random.randn(len(t)) * 0.5 # Signal x with noise
+# y = np.roll(x, known_lag) + np.random.randn(len(t)) * 0.5    # Signal y is x rolled by 'known_lag'
+
+# # 2. Compute the cross-correlation
+# # Use mode="full" to calculate the correlation for all possible lags
+# correlation = signal.correlate(x, y, mode="full")
+
+# # 3. Compute the lag indices
+# # This function generates an array of lag indices that corresponds to the correlation array
+# lags = signal.correlation_lags(x.size, y.size, mode="full")
+
+# # 4. Find the lag at the peak of the correlation
+# # The index of the maximum correlation value indicates the lag
+# lag_index = np.argmax(correlation)
+# estimated_lag = lags[lag_index]
+
+# print(f"The known lag introduced was: {known_lag} samples")
+# print(f"The estimated lag from cross-correlation is: {estimated_lag} samples")
+
+# # Optional: Visualize the results
+# plt.figure(figsize=(10, 6))
+# plt.plot(lags, correlation)
+# plt.axvline(estimated_lag, color='r', linestyle='--', label=f'Estimated Lag: {estimated_lag}')
+# plt.title('Cross-Correlation Function')
+# plt.xlabel('Lag (samples)')
+# plt.ylabel('Correlation Coefficient (unnormalized)')
+# plt.legend()
+# plt.grid(True)
+# plt.show()
+
+# #%%
+# plt.figure(figsize=(10, 6))
+# plt.plot(x, color = 'g')
+# plt.plot(y, color = 'r')
+# plt.show()

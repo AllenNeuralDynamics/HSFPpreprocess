@@ -66,6 +66,158 @@ def load_fip_h5(file_path):
 
 
 
+#%% plot subject-sorted heat maps
+def plot_trial_by_trial_heatmaps(cohort_summary, trial_types, time_axis, save_dir):
+    for tt in trial_types:
+        g_all_trials = []
+        r_all_trials = []
+        dividers = []
+        subject_label_positions = []
+        current_row = 0
+
+        # 1. Stack trials from all subjects
+        for sid in cohort_summary.keys():
+            # Get PSTH: shape is [Time x Trials]
+            g_psth = cohort_summary[sid]['G'][tt]['psth']
+            r_psth = cohort_summary[sid]['R'][tt]['psth']
+            
+            # Transpose to [Trials x Time] for the heatmap
+            g_trials = g_psth.T
+            r_trials = r_psth.T
+            
+            num_trials = g_trials.shape[0]
+            
+            g_all_trials.append(g_trials)
+            r_all_trials.append(r_trials)
+            
+            # Keep track of where to draw the line between mice
+            subject_label_positions.append(current_row + num_trials // 2)
+            current_row += num_trials
+            dividers.append(current_row)
+
+        # Combine into giant matrices
+        g_final = np.vstack(g_all_trials)
+        r_final = np.vstack(r_all_trials)
+        
+        # Calculate global scale limits
+        combined_data = np.concatenate([g_final, r_final])
+        vmin_global = np.nanpercentile(combined_data, 1)
+        vmax_global = np.nanpercentile(combined_data, 99)
+
+        # 2. Plotting
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 5), sharey=True)
+        
+        zero_idx = np.searchsorted(time_axis, 0)
+        
+        # Green Heatmap
+        sns.heatmap(g_final, ax=ax1, cmap='viridis', 
+                    vmin = vmin_global, vmax=vmax_global, 
+                    robust=True, cbar_kws={'label': 'Green dFF'},
+                    rasterized=True)
+        ax1.set_title(f'Green - All Trials: {tt}')
+        
+        # Red Heatmap
+        sns.heatmap(r_final, ax=ax2, cmap='magma', 
+                    vmin = vmin_global, vmax=vmax_global, 
+                    robust=True, cbar_kws={'label': 'Red dFF'},
+                    rasterized=True)
+        ax2.set_title(f'Red - All Trials: {tt}')
+
+        # Formatting
+        xticks = np.arange(0, len(time_axis), 20)
+        xticklabels = np.round(time_axis[xticks], 1)
+        
+        for ax in [ax1, ax2]:
+            ax.set_xticks(xticks)
+            ax.set_xticklabels(xticklabels)
+            ax.set_xlabel('Time from Event (s)')
+            # Event line at t=0
+            ax.axvline(x=zero_idx, color='white', linestyle='--', linewidth=2)
+            
+            # Add horizontal lines between subjects
+            for d in dividers[:-1]:
+                ax.axhline(y=d, color='white', linestyle='-', linewidth=1)
+
+        # Label the subjects on the Y-axis
+        ax1.set_yticks(subject_label_positions)
+        ax1.set_yticklabels(list(cohort_summary.keys()), rotation=0)
+        ax1.set_ylabel('Trials (Grouped by Subject)')
+
+        plt.tight_layout()
+    
+        # Saves as high-res SVG for publications or PNG for quick viewing
+        save_path = os.path.join(save_dir, f"SubjectSorted_Heatmap_{tt}.svg")
+        plt.savefig(save_path, format='svg', transparent=True)
+        print(f"Saved: {save_path}")
+       
+        plt.show()
+
+#%% plot time interleaved heat maps
+def plot_interleaved_chronological_heatmaps(cohort_summary, trial_types, time_axis, save_dir):
+    for tt in trial_types:
+        interleaved_g = []
+        interleaved_r = []
+        row_labels = []
+        
+        # 1. Determine the maximum number of trials any animal has
+        sids = list(cohort_summary.keys())
+        max_trials = max([cohort_summary[sid]['G'][tt]['psth'].shape[1] for sid in sids])
+
+        # 2. Interleave: Loop through trial index first, then subjects
+        for trial_idx in range(max_trials):
+            for sid in sids:
+                g_psth = cohort_summary[sid]['G'][tt]['psth']
+                r_psth = cohort_summary[sid]['R'][tt]['psth']
+                
+                # Check if this animal actually has this trial index 
+                # (in case one session was shorter than others)
+                if trial_idx < g_psth.shape[1]:
+                    # Extract trial [Time] and add as a row
+                    interleaved_g.append(g_psth[:, trial_idx])
+                    interleaved_r.append(r_psth[:, trial_idx])
+                    row_labels.append(f"T{trial_idx+1}_{sid}")
+
+        g_final = np.array(interleaved_g)
+        r_final = np.array(interleaved_r)
+
+        # 3. Calculate Global Scale (Synced)
+        combined_data = np.concatenate([g_final, r_final])
+        vmin_global = np.nanpercentile(combined_data, 1)
+        vmax_global = np.nanpercentile(combined_data, 99)
+
+        # 4. Plotting
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 5), sharey=True)
+        
+        
+        # Plotting
+        sns.heatmap(g_final, ax=ax1, cmap='Greens', vmin=vmin_global, vmax=vmax_global,
+                    cbar_kws={'label': '$\Delta F/F$'},
+                    rasterized=True)
+        ax1.set_title(f'Interleaved Green (DA) - {tt}')
+        
+        sns.heatmap(r_final, ax=ax2, cmap='Oranges', vmin=vmin_global, vmax=vmax_global,
+                    cbar_kws={'label': '$\Delta F/F$'},
+                    rasterized=True)
+        ax2.set_title(f'Interleaved Red (Calcium) - {tt}')
+
+        # Formatting
+        xticks = np.arange(0, len(time_axis), 20)
+        ax1.set_xticks(xticks)
+        ax1.set_xticklabels(np.round(time_axis[xticks], 1))
+        ax2.set_xticks(xticks)
+        ax2.set_xticklabels(np.round(time_axis[xticks], 1))
+
+
+        plt.tight_layout()
+        
+        # Saves as high-res SVG for publications or PNG for quick viewing
+        save_path = os.path.join(save_dir, f"Interleaved_Heatmap_{tt}.svg")
+        plt.savefig(save_path, format='svg', transparent=True)
+        print(f"Saved: {save_path}")
+        
+        plt.show()
+        
+
 
 #%% calculate decay constant
 def calculate_half_life(time_axis, psth_trace, peak_idx):
