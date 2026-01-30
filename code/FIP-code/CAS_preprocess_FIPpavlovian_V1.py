@@ -32,7 +32,7 @@ import h5py
 import FIPFunctions2 as fipf
 
 
-session_id = 'FIP_835527_2026-01-12_10-31-26'
+session_id = 'FIP_840205_2026-01-12_09-58-41'
 
 SaveDir = r'C:\output_data\results\results_' + session_id
 AnalDir = r'C:\output_data' + os.sep + session_id + os.sep + 'behavior'
@@ -46,8 +46,8 @@ first_rew_idx = 0           # 0 for 836733 12/3/25
 #Roi2Vis=[0,1,2]
 Roi2Vis = [0,1]
 
-SaveFigs = 1 # set to 1 to save generated plots in results directory, 0 to skip
-SaveResults = 1 # set to 1 to save preprocessed_results in fib directory, 0 to skip
+SaveFigs = 0 # set to 1 to save generated plots in results directory, 0 to skip
+SaveResults = 0 # set to 1 to save preprocessed_results in fib directory, 0 to skip
 
 # params for pre-processing
 nFrame2cut = 100  #crop initial n frames
@@ -310,8 +310,42 @@ fipf.generate_all_trial_summaries(
     StimPeriod
 )
 
+#%% plot moment to moment brightness by ROI
+for roi in Roi2Vis:  
+    g_data = G_dF_F[:,roi]*100
+    r_data = R_dF_F[:,roi]*100
+    fipf.plot_global_moment_scatter(g_data, r_data, roi, subjectID)
+
+# Combine ROIs and visualize
+roi = 'Combined'
+roi_idx = [i for i in Roi2Vis]
+g_data = G_dF_F[:,roi_idx]*100
+r_data = R_dF_F[:,roi_idx]*100
+fipf.plot_global_moment_scatter(g_data, r_data, roi, subjectID)
 
 
+#%% Find peaks in one channel and plot against amplitude of other channel
+g_peak_thresh = 10
+r_peak_thresh = 10
+G_dF_F_percent = G_dF_F * 100
+R_dF_F_percent = R_dF_F * 100
+
+# # Find Green Peaks, plot corresponding Red and vice versa:
+# for roi in roi_idx:
+#     fipf.plot_peak_coupling(G_dF_F_percent, R_dF_F_percent, roi, g_peak_thresh, subjectID, sampling_rate, 'green')
+#     fipf.plot_peak_coupling(R_dF_F_percent, G_dF_F_percent, roi, r_peak_thresh, subjectID, sampling_rate, 'red')
+    
+#     fig = plt.figure(figsize=(18, 10))
+
+#     plt.plot(G_dF_F[:, roi]*100, 'green', label='Green')
+#     plt.plot(R_dF_F[:, roi]*100, 'magenta', label='Red')
+
+
+for roi in roi_idx:
+    fipf.analyze_peak_coupling(G_dF_F_percent, R_dF_F_percent, time_seconds, 
+                               roi, g_peak_thresh, sampling_rate, subjectID, 'green', window_sec = [2, 2])
+    fipf.analyze_peak_coupling(R_dF_F_percent, G_dF_F_percent, time_seconds, 
+                               roi, r_peak_thresh, sampling_rate, subjectID, 'red', window_sec = [2, 2])
 
 #%% Save preprocessed results to fib directory as HDF5
 

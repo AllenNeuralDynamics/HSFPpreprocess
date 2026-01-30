@@ -19,6 +19,9 @@ import pandas as pd
 import h5py
 import seaborn as sns
 from datetime import datetime
+import scipy.stats as stats
+from scipy.signal import find_peaks
+import random
 
 #%%  original preprocess functions
 
@@ -1291,7 +1294,197 @@ def _add_reaction_time_column(fig, gs, beh, cs, total_rows):
         sns.histplot(fast_rt, ax=ax3, color='red', alpha=0.4, kde=True)
     ax3.set_title(f'Fast RTs (n={len(fast_rt)})')
 
+#%% plot_global_moment_scatter
+def plot_global_moment_scatter(g_data, r_data, roi, sid):
+    """
+    g_psths: 1D array [Time x ROI] 
+    r_psths: 2D array [Time x ROI]
+    """
+    # 1. Flatten all trials and all timepoints into two long vectors
+    g_all = g_data.flatten()
+    r_all = r_data.flatten()
+    
+    # 2. Remove any NaNs
+    mask = ~np.isnan(g_all) & ~np.isnan(r_all)
+    g_clean = g_all[mask]
+    r_clean = r_all[mask]
 
+    # 3. Plotting
+    plt.figure(figsize=(6, 6))
+    
+    # Use 'hexbin' or a very high-alpha scatter to see density
+    # Hexbin is better for "all trials" because millions of points overlap
+    plt.hexbin(r_clean, g_clean, gridsize=50, cmap='viridis', mincnt=1)
+    
+    x_left, x_right = plt.xlim()
+    y_left, y_right = plt.ylim()
+    
+    # Add a unity line (y-x)
+    # Find the overall limits to make the line long enough
+    min_limit = min(np.min(g_clean), np.min(r_clean))
+    max_limit = max(np.max(g_clean), np.max(r_clean))
+    plt.plot([min_limit, max_limit], [min_limit, max_limit], color='black', 
+             linestyle=':', alpha=0.6, label='(Y=X)')
+    
+    # Add the linear regression line
+    slope, intercept, r_val, p_val, _ = stats.linregress(r_clean, g_clean)
+    x_range = np.array([np.min(r_clean), np.max(r_clean)])
+    plt.plot(x_range, slope*x_range + intercept, color='red', linestyle='--', 
+             label=f'Global R²={r_val**2:.3f}')
+
+    # set axes limits back to original
+    plt.xlim(x_left, x_right)
+    plt.ylim(y_left, y_right)
+    
+    plt.xlabel('Red Signal')
+    plt.ylabel('Green Signal')
+    plt.title(f'Moment-to-Moment Coupling:{sid} ROI {roi}\n(All Timepoints)')
+    plt.colorbar(label='Point Density')
+    plt.legend()
+    sns.despine()
+    plt.show()
+
+
+
+#%% plot_peak_coupling
+def plot_peak_coupling(peak_data, second_data, roi_idx, threshold, sid, fs, peak_channel_name):
+    """
+    Finds peaks in peak_data and plots their amplitudes against 
+    the values in second_data at the same timestamps.
+    """
+    # 1. Extract the specific ROI column [Time]
+    ref_signal = peak_data[:, roi_idx]
+    other_signal = second_data[:, roi_idx]
+
+    # 2. Find peaks above threshold
+    # threshold is in % dF/F as per your data normalization, minimum 2s apart
+    peak_indices, _ = find_peaks(ref_signal, height=threshold, distance=fs*0.5)
+
+    if len(peak_indices) == 0:
+        print(f"No peaks found above {threshold}% in ROI {roi_idx}")
+        return
+
+    # 3. Get the amplitudes at those indices
+    x = ref_signal[peak_indices]  # Amplitudes of the peak channel
+    y = other_signal[peak_indices] # Corresponding values in second channel
+
+    # 4. Regression Analysis
+    mask = ~np.isnan(x) & ~np.isnan(y)
+    x_clean, y_clean = x[mask], y[mask]
+
+    fig, ax1 = plt.subplots(figsize=(5, 5))
+
+    if len(x_clean) > 1:
+        slope, intercept, r_val, p_val, _ = stats.linregress(x_clean, y_clean)
+        
+        # Plot raw points
+        ax1.scatter(x_clean, y_clean, color='gray', alpha=0.3, s=25, edgecolors='none')
+        
+        # Plot regression line
+        line = slope * x_clean + intercept
+        ax1.plot(x_clean, line, color='red', lw=2, label=f'$R^2$={r_val**2:.3f}\n$p$={p_val:.4e}')
+        
+        ax1.set_title(f'Amplitude Coupling: {sid} for {peak_channel_name} Peaks\n(ROI {roi_idx})')
+        ax1.set_xlabel('Peak Channel (% $\Delta F/F$)')
+        ax1.set_ylabel('Second Channel (% $\Delta F/F$)')
+        ax1.legend(frameon=False)
+        plt.tight_layout()
+        
+    return x_clean, y_clean
+
+#%%
+def analyze_peak_coupling(data_primary, data_secondary, time_seconds, roi_idx, 
+                          threshold, fs, sid, peak_channel_name, window_sec=[2, 2]):
+    """
+    Unified function to plot amplitude coupling and sample individual transients.
+    Works for any channel passed as 'data_primary'.
+    """
+    # Determine colors and names based on input
+    if peak_channel_name.lower() == 'green':
+        c_prim, c_sec = 'green', 'magenta'
+        other_name = 'Red'
+    else:
+        c_prim, c_sec = 'magenta', 'green'
+        other_name = 'Green'
+
+    # 1. Extract Signals
+    sig_prim = data_primary[:, roi_idx]
+    sig_sec = data_secondary[:, roi_idx]
+    
+    # 2. Find ALL peaks in primary channel
+    p_idx, _ = find_peaks(sig_prim, height=threshold, distance=fs*2)
+    
+    if len(p_idx) < 2:
+        print(f"Insufficient peaks found in ROI {roi_idx}")
+        return None, None
+
+    # 3. Targeted Selection: Find peaks where Secondary Signal is <= 0
+    sec_values_at_peaks = sig_sec[p_idx]
+    
+    # Indices within the p_idx array where sec signal is low/negative
+    low_sec_indices = np.where(sec_values_at_peaks <= 0)[0]
+    
+    if len(low_sec_indices) >= 10:
+        # If we have plenty, take a random sample of 10 from the "low" group
+        highlight_indices = random.sample(list(low_sec_indices), 10)
+    elif len(low_sec_indices) > 0:
+        # If we have some but fewer than 10, take all of them
+        highlight_indices = list(low_sec_indices)
+    else:
+        # LAST RESORT: Take the 10 lowest values available
+        print(f"Note: No peaks found with {other_name} <= 0. Selecting 10 lowest values.")
+        highlight_indices = np.argsort(sec_values_at_peaks)[:10]
+
+    highlight_p_idx = p_idx[highlight_indices]
+    
+
+    # --- FIGURE 1: Amplitude Coupling ---
+    fig1, ax_corr = plt.subplots(figsize=(6, 6))
+    
+    x_all, y_all = sig_prim[p_idx], sig_sec[p_idx]
+    
+    ax_corr.scatter(x_all, y_all, color='gray', alpha=0.3, s=30, label='All Peaks', edgecolors='none')
+    ax_corr.scatter(x_all[highlight_indices], y_all[highlight_indices], 
+                    color='red', s=60, edgecolors='black', label='Highlighted Samples', zorder=5)
+    
+    # Regression
+    slope, intercept, r_val, p_val, _ = stats.linregress(x_all, y_all)
+    ax_corr.plot(x_all, slope*x_all + intercept, color='black', linestyle='--', alpha=0.7)
+    
+    ax_corr.set_title(f'{sid} (ROI {roi_idx})\nRef: {peak_channel_name.capitalize()} | $R^2$={r_val**2:.3f}')
+    ax_corr.set_xlabel(f'{peak_channel_name.capitalize()} Peak Amplitude (% $\Delta F/F$)')
+    ax_corr.set_ylabel(f'{other_name} Value at Peak (% $\Delta F/F$)')
+    ax_corr.legend(frameon=False)
+    sns.despine()
+
+    # --- FIGURE 2: Individual Trace Windows ---
+    fig2, axes = plt.subplots(2, 5, figsize=(20, 8))
+    axes = axes.flatten()
+    
+    pre_s, post_s = int(window_sec[0] * fs), int(window_sec[1] * fs)
+    
+    for i, peak_time_idx in enumerate(highlight_p_idx):
+        start = max(0, peak_time_idx - pre_s)
+        end = min(len(sig_prim), peak_time_idx + post_s)
+        rel_time = (np.arange(start, end) - peak_time_idx) / fs
+        
+        # Plot traces
+        axes[i].plot(rel_time, sig_prim[start:end], color=c_prim, lw=2, label=peak_channel_name)
+        
+        # Calculate offset for visualization
+        offset = np.nanmax(sig_prim[start:end]) - np.nanmin(sig_sec[start:end]) + 5
+        axes[i].plot(rel_time, sig_sec[start:end] - offset, color=c_sec, lw=2, label=other_name)
+        
+        axes[i].axvline(0, color='red', linestyle=':', alpha=0.6)
+        axes[i].set_title(f"Peak: {time_seconds[peak_time_idx]:.1f}s")
+        
+        if i >= 5: axes[i].set_xlabel('Time (s)')
+        if i % 5 == 0: axes[i].set_ylabel('% $\Delta F/F$')
+
+    plt.suptitle(f"Samples (Ref: {peak_channel_name}) - {sid} (ROI {roi_idx})", fontsize=16)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    
+    return fig1, fig2
 
 #%% save_analysis_to_hdf5
 def save_analysis_to_hdf5(save_dir, subjectID, psth_data, psth_pooled_data, 
