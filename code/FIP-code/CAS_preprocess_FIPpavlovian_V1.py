@@ -32,7 +32,7 @@ import h5py
 import FIPFunctions2 as fipf
 
 
-session_id = 'FIP_840205_2026-01-12_09-58-41'
+session_id = 'FIP_835527_2026-01-12_10-31-26'
 
 SaveDir = r'C:\output_data\results\results_' + session_id
 AnalDir = r'C:\output_data' + os.sep + session_id + os.sep + 'behavior'
@@ -46,7 +46,7 @@ first_rew_idx = 0           # 0 for 836733 12/3/25
 #Roi2Vis=[0,1,2]
 Roi2Vis = [0,1]
 
-SaveFigs = 0 # set to 1 to save generated plots in results directory, 0 to skip
+SaveFigs = 1 # set to 1 to save generated plots in results directory, 0 to skip
 SaveResults = 0 # set to 1 to save preprocessed_results in fib directory, 0 to skip
 
 # params for pre-processing
@@ -181,6 +181,13 @@ UR_idx_CS2 = trial_data['UnRewardedCS2ind']
 R_idx_CS3 = trial_data['RewardedCS3ind']
 UR_idx_CS3 = trial_data['UnRewardedCS3ind']
 
+TrialFrames = np.sort(np.concatenate([CS1Frames, CS2Frames, CS3Frames]))
+trial_times =time_seconds[TrialFrames.astype(int)]
+trial_iti = np.diff(trial_times)
+min_iti = np.min(trial_iti)
+max_iti = np.max(trial_iti)
+print(f'Minimum ITI:{min_iti} s')
+print(f'Maximum ITI:{max_iti} s')
 
 #%% Calculate PSTH for signal around all trials
 # format of psth_data = dict of size 18 for each combination of the following:
@@ -220,8 +227,8 @@ if psth_data.get('G_CS1R_base') is not None:
     fig_peaks_CS1R = fipf.plot_time_to_peak_summary(psth_data, subjectID, Roi2Vis, sampling_rate, preW, 
                                                     trial_type='CS1R', search_window=PeakWindow)
     if SaveFigs == 1:
-        fig_psth_CS1R.savefig(os.path.join(SaveDir, f"{subjectID}_CS1R_PSTH_ROI-Summary.pdf"), bbox_inches='tight')
-        fig_peaks_CS1R.savefig(os.path.join(SaveDir, f"{subjectID}_CS1R_peaks_ROI-Summary.pdf"), bbox_inches='tight')
+        fig_psth_CS1R.savefig(os.path.join(SaveDir, f"{subjectID}_CS1R_PSTH_ROI-Summary.svg"), bbox_inches='tight')
+        fig_peaks_CS1R.savefig(os.path.join(SaveDir, f"{subjectID}_CS1R_peaks_ROI-Summary.svg"), bbox_inches='tight')
 else:
     print("Skipping CS1R: No trials found.")
 
@@ -232,8 +239,8 @@ if psth_data.get('G_CS1UR_base') is not None:
     fig_peaks_CS1UR = fipf.plot_time_to_peak_summary(psth_data, subjectID, Roi2Vis, sampling_rate, preW, 
                                                     trial_type='CS1UR', search_window=PeakWindow)
     if SaveFigs == 1:
-        fig_psth_CS1UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS1UR_PSTH_ROI-Summary.pdf"), bbox_inches='tight')
-        fig_peaks_CS1UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS1UR_peaks_ROI-Summary.pdf"), bbox_inches='tight')
+        fig_psth_CS1UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS1UR_PSTH_ROI-Summary.svg"), bbox_inches='tight')
+        fig_peaks_CS1UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS1UR_peaks_ROI-Summary.svg"), bbox_inches='tight')
 else:
     print("Skipping CS1UR: No trials found.")
     
@@ -247,8 +254,8 @@ if psth_data.get('G_CS2R_base') is not None:
     fig_peaks_CS2R = fipf.plot_time_to_peak_summary(psth_data, subjectID, Roi2Vis, sampling_rate, preW, 
                                                     trial_type='CS2R', search_window=PeakWindow)
     if SaveFigs == 1:
-        fig_psth_CS2R.savefig(os.path.join(SaveDir, f"{subjectID}_CS2R_PSTH_ROI-Summary.pdf"), bbox_inches='tight')
-        fig_peaks_CS2R.savefig(os.path.join(SaveDir, f"{subjectID}_CS2R_peaks_ROI-Summary.pdf"), bbox_inches='tight')
+        fig_psth_CS2R.savefig(os.path.join(SaveDir, f"{subjectID}_CS2R_PSTH_ROI-Summary.svg"), bbox_inches='tight')
+        fig_peaks_CS2R.savefig(os.path.join(SaveDir, f"{subjectID}_CS2R_peaks_ROI-Summary.svg"), bbox_inches='tight')
 else:
     print("Skipping CS2R: No trials found.")
     
@@ -259,8 +266,8 @@ if psth_data.get('G_CS2UR_base') is not None:
     fig_peaks_CS2UR = fipf.plot_time_to_peak_summary(psth_data, subjectID, Roi2Vis, sampling_rate, preW,
                                                      trial_type='CS2UR', search_window=PeakWindow)
     if SaveFigs == 1:
-        fig_psth_CS2UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS2UR_PSTH_ROI-Summary.pdf"), bbox_inches='tight')
-        fig_peaks_CS2UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS2UR_peaks_ROI-Summary.pdf"), bbox_inches='tight')
+        fig_psth_CS2UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS2UR_PSTH_ROI-Summary.svg"), bbox_inches='tight')
+        fig_peaks_CS2UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS2UR_peaks_ROI-Summary.svg"), bbox_inches='tight')
 else:
     print("Skipping CS2UR: No trials found.")
     
@@ -275,8 +282,8 @@ if psth_data.get('G_CS3R_base') is not None:
     fig_peaks_CS3R = fipf.plot_time_to_peak_summary(psth_data, subjectID, Roi2Vis, sampling_rate, preW, 
                                                     trial_type='CS3R', search_window=PeakWindow)
     if SaveFigs == 1:
-        fig_psth_CS3R.savefig(os.path.join(SaveDir, f"{subjectID}_CS3R_PSTH_ROI-Summary.pdf"), bbox_inches='tight')
-        fig_peaks_CS3R.savefig(os.path.join(SaveDir, f"{subjectID}_CS3R_peaks_ROI-Summary.pdf"), bbox_inches='tight')
+        fig_psth_CS3R.savefig(os.path.join(SaveDir, f"{subjectID}_CS3R_PSTH_ROI-Summary.svg"), bbox_inches='tight')
+        fig_peaks_CS3R.savefig(os.path.join(SaveDir, f"{subjectID}_CS3R_peaks_ROI-Summary.svg"), bbox_inches='tight')
 else:
     print("Skipping CS3R: No trials found.")
     
@@ -287,8 +294,8 @@ if psth_data.get('G_CS3UR_base') is not None:
     fig_peaks_CS3UR = fipf.plot_time_to_peak_summary(psth_data, subjectID, Roi2Vis, sampling_rate, preW,
                                                      trial_type='CS3UR', search_window=PeakWindow)
     if SaveFigs == 1:
-        fig_psth_CS3UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS3UR_PSTH_ROI-Summary.pdf"), bbox_inches='tight')
-        fig_peaks_CS3UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS3UR_peaks_ROI-Summary.pdf"), bbox_inches='tight')
+        fig_psth_CS3UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS3UR_PSTH_ROI-Summary.svg"), bbox_inches='tight')
+        fig_peaks_CS3UR.savefig(os.path.join(SaveDir, f"{subjectID}_CS3UR_peaks_ROI-Summary.svg"), bbox_inches='tight')
 else:
     print("Skipping CS3UR: No trials found.")
 
@@ -342,11 +349,19 @@ R_dF_F_percent = R_dF_F * 100
 
 
 for roi in roi_idx:
-    fipf.analyze_peak_coupling(G_dF_F_percent, R_dF_F_percent, time_seconds, 
+    fig_greenpeaks, fig_greenexamples = fipf.analyze_peak_coupling(G_dF_F_percent, R_dF_F_percent, time_seconds, 
                                roi, g_peak_thresh, sampling_rate, subjectID, 'green', window_sec = [2, 2])
-    fipf.analyze_peak_coupling(R_dF_F_percent, G_dF_F_percent, time_seconds, 
+    fig_redpeaks, fig_redexamples = fipf.analyze_peak_coupling(R_dF_F_percent, G_dF_F_percent, time_seconds, 
                                roi, r_peak_thresh, sampling_rate, subjectID, 'red', window_sec = [2, 2])
-
+    
+    if SaveFigs == 1:
+        # Save the green peaks coupled to red signal + examples of uncoupled responses
+        fig_greenpeaks.savefig(os.path.join(SaveDir, f"{subjectID}_ROI{roi}_greenpeaks_coupling.svg"), bbox_inches='tight')
+        fig_greenexamples.savefig(os.path.join(SaveDir, f"{subjectID}_ROI{roi}_greenpeaks_uncoupled-examples.svg"), bbox_inches='tight')
+        
+        # Save the red peaks coupled to green signal + examples of uncoupled responses
+        fig_redpeaks.savefig(os.path.join(SaveDir, f"{subjectID}_ROI{roi}_redpeaks_coupling.svg"), bbox_inches='tight')
+        fig_redexamples.savefig(os.path.join(SaveDir, f"{subjectID}_ROI{roi}_redpeaks_uncoupled-examples.svg"), bbox_inches='tight')
 #%% Save preprocessed results to fib directory as HDF5
 
 if SaveResults == 1:

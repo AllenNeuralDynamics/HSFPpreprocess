@@ -298,7 +298,7 @@ for target_tt in trial_types_to_plot:
     if len(x[mask]) > 1:
         slope, intercept, r_val, p_val, _ = stats.linregress(x[mask], y[mask])
         ax1.scatter(x[mask], y[mask], color='gray', alpha=0.3, s=15, edgecolors='none')
-        ax1.plot(x[mask], slope*x[mask] + intercept, color='red', label=f'R²={r_val**2:.3f}')
+        ax1.plot(x[mask], slope*x[mask] + intercept, color='red', label=f'R²={r_val**2:.3f}\n p={p_val}')
         ax1.set_title(f'Amplitude Coupling ({target_tt})')
         ax1.set_xlabel('Red Peak (% ∆F/F)'); ax1.set_ylabel('Green Peak (% ∆F/F)')
         ax1.legend(frameon=False)

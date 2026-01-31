@@ -1390,7 +1390,7 @@ def plot_peak_coupling(peak_data, second_data, roi_idx, threshold, sid, fs, peak
         ax1.legend(frameon=False)
         plt.tight_layout()
         
-    return x_clean, y_clean
+    return fig, x_clean, y_clean
 
 #%%
 def analyze_peak_coupling(data_primary, data_secondary, time_seconds, roi_idx, 
