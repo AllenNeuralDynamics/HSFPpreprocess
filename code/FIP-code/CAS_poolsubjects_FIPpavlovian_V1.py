@@ -347,6 +347,7 @@ for target_tt in trial_types_to_plot:
             # Ensure we don't accidentally pick the same trial (i != j)
             if i == j: j = (j + 1) % n_trials 
             
+            # Z-score data
             g_n = (g_psths[:, i] - np.mean(g_psths[:, i])) / (np.std(g_psths[:, i]) + 1e-6)
             r_n = (r_psths[:, j] - np.mean(r_psths[:, j])) / (np.std(r_psths[:, j]) + 1e-6)
             shuff_xcorrs.append(signal.correlate(g_n, r_n, mode='full') / len(g_n))

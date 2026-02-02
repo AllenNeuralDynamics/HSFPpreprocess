@@ -1392,7 +1392,7 @@ def plot_peak_coupling(peak_data, second_data, roi_idx, threshold, sid, fs, peak
         
     return fig, x_clean, y_clean
 
-#%%
+#%% analyze_peak_coupling
 def analyze_peak_coupling(data_primary, data_secondary, time_seconds, roi_idx, 
                           threshold, fs, sid, peak_channel_name, window_sec=[2, 2]):
     """
@@ -1421,20 +1421,22 @@ def analyze_peak_coupling(data_primary, data_secondary, time_seconds, roi_idx,
     # 3. Targeted Selection: Find peaks where Secondary Signal is <= 0
     sec_values_at_peaks = sig_sec[p_idx]
     
-    # Indices within the p_idx array where sec signal is low/negative
-    low_sec_indices = np.where(sec_values_at_peaks <= 0)[0]
+    # # Indices within the p_idx array where sec signal is low/negative
+    # low_sec_indices = np.where(sec_values_at_peaks <= 0)[0]
     
-    if len(low_sec_indices) >= 10:
-        # If we have plenty, take a random sample of 10 from the "low" group
-        highlight_indices = random.sample(list(low_sec_indices), 10)
-    elif len(low_sec_indices) > 0:
-        # If we have some but fewer than 10, take all of them
-        highlight_indices = list(low_sec_indices)
-    else:
-        # LAST RESORT: Take the 10 lowest values available
-        print(f"Note: No peaks found with {other_name} <= 0. Selecting 10 lowest values.")
-        highlight_indices = np.argsort(sec_values_at_peaks)[:10]
-
+    # if len(low_sec_indices) >= 10:
+    #     # If we have plenty, take a random sample of 10 from the "low" group
+    #     highlight_indices = random.sample(list(low_sec_indices), 10)
+    # elif len(low_sec_indices) > 0:
+    #     # If we have some but fewer than 10, take all of them
+    #     highlight_indices = list(low_sec_indices)
+    # else:
+    #     # LAST RESORT: Take the 10 lowest values available
+    #     print(f"Note: No peaks found with {other_name} <= 0. Selecting 10 lowest values.")
+    #     highlight_indices = np.argsort(sec_values_at_peaks)[:10]
+   
+    highlight_indices = np.argsort(sec_values_at_peaks)[:10]
+    
     highlight_p_idx = p_idx[highlight_indices]
     
 
@@ -1472,7 +1474,10 @@ def analyze_peak_coupling(data_primary, data_secondary, time_seconds, roi_idx,
         axes[i].plot(rel_time, sig_prim[start:end], color=c_prim, lw=2, label=peak_channel_name)
         
         # Calculate offset for visualization
-        offset = np.nanmax(sig_prim[start:end]) - np.nanmin(sig_sec[start:end]) + 5
+        raw_offset = np.nanmax(sig_prim[start:end]) - np.nanmin(sig_sec[start:end]) + 5
+        # Round to nearest 5
+        offset = 5 * round(raw_offset / 5)
+        
         axes[i].plot(rel_time, sig_sec[start:end] - offset, color=c_sec, lw=2, label=other_name)
         
         axes[i].axvline(0, color='red', linestyle=':', alpha=0.6)
@@ -1481,7 +1486,7 @@ def analyze_peak_coupling(data_primary, data_secondary, time_seconds, roi_idx,
         if i >= 5: axes[i].set_xlabel('Time (s)')
         if i % 5 == 0: axes[i].set_ylabel('% $\Delta F/F$')
 
-    plt.suptitle(f"Samples (Ref: {peak_channel_name}) - {sid} (ROI {roi_idx})", fontsize=16)
+    plt.suptitle(f"Samples (Ref: {peak_channel_name}) - {sid} (ROI {roi_idx}. \nThreshold: {threshold}    Offset: {offset})", fontsize=16)
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     
     return fig1, fig2

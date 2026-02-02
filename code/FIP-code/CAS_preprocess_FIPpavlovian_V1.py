@@ -332,10 +332,20 @@ fipf.plot_global_moment_scatter(g_data, r_data, roi, subjectID)
 
 
 #%% Find peaks in one channel and plot against amplitude of other channel
-g_peak_thresh = 10
-r_peak_thresh = 10
+g_peak_thresh = 5
+r_peak_thresh = 5
 G_dF_F_percent = G_dF_F * 100
 R_dF_F_percent = R_dF_F * 100
+
+#Z-score data
+n_frames = G_dF_F.shape[0]
+n_rois = len(Roi2Vis)
+G_Z = np.zeros((n_frames, n_rois))
+R_Z = np.zeros((n_frames, n_rois))
+
+for roi in Roi2Vis:
+    G_Z[:,roi] = (G_dF_F[:, roi] - np.mean(G_dF_F[:, roi])) / (np.std(G_dF_F[:, roi]) + 1e-6)
+    R_Z[:,roi] = (R_dF_F[:, roi] - np.mean(R_dF_F[:, roi])) / (np.std(R_dF_F[:, roi]) + 1e-6)
 
 # # Find Green Peaks, plot corresponding Red and vice versa:
 # for roi in roi_idx:
@@ -349,10 +359,19 @@ R_dF_F_percent = R_dF_F * 100
 
 
 for roi in roi_idx:
-    fig_greenpeaks, fig_greenexamples = fipf.analyze_peak_coupling(G_dF_F_percent, R_dF_F_percent, time_seconds, 
-                               roi, g_peak_thresh, sampling_rate, subjectID, 'green', window_sec = [2, 2])
-    fig_redpeaks, fig_redexamples = fipf.analyze_peak_coupling(R_dF_F_percent, G_dF_F_percent, time_seconds, 
-                               roi, r_peak_thresh, sampling_rate, subjectID, 'red', window_sec = [2, 2])
+    fig_greenpeaks, fig_greenexamples = fipf.analyze_peak_coupling(
+        G_dF_F_percent, R_dF_F_percent, # DF/F
+        #G_Z, R_Z, # Z-score
+        time_seconds, roi, g_peak_thresh, sampling_rate, subjectID, 'green', window_sec = [2, 2]
+        )
+    
+    fig_redpeaks, fig_redexamples = fipf.analyze_peak_coupling(
+        R_dF_F_percent, G_dF_F_percent, # DF/F
+        #R_Z, G_Z, # Z-score
+        time_seconds, roi, r_peak_thresh, sampling_rate, subjectID, 'red', window_sec = [2, 2]
+        )
+    
+    
     
     if SaveFigs == 1:
         # Save the green peaks coupled to red signal + examples of uncoupled responses
@@ -362,6 +381,8 @@ for roi in roi_idx:
         # Save the red peaks coupled to green signal + examples of uncoupled responses
         fig_redpeaks.savefig(os.path.join(SaveDir, f"{subjectID}_ROI{roi}_redpeaks_coupling.svg"), bbox_inches='tight')
         fig_redexamples.savefig(os.path.join(SaveDir, f"{subjectID}_ROI{roi}_redpeaks_uncoupled-examples.svg"), bbox_inches='tight')
+        
+        
 #%% Save preprocessed results to fib directory as HDF5
 
 if SaveResults == 1:
