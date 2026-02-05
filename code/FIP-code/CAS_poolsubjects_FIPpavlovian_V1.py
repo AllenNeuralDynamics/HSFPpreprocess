@@ -214,6 +214,39 @@ for target_tt in trial_types_to_plot:
                     sub_lat = np.nanmean(np.nanmean(peaks_all[l_key][rois, :], axis=0))
                     lat_data[event][sig].append(sub_lat)
 
+    # STATS
+    # --- Statistical Analysis ---
+    w_stats_results = []
+    t_stats_results = []
+    
+    # A. Compare Magnitudes (Green vs Red)
+    if len(mag_data['G']) == len(mag_data['R']) and len(mag_data['G']) > 0:
+        stat, p_val = stats.wilcoxon(mag_data['G'], mag_data['R'])
+        t_stat, t_p_val = stats.ttest_rel(mag_data['G'], mag_data['R'])
+        
+        w_stats_results.append(f"Magnitude G vs R: W={stat:.1f}, p={p_val:.4f}")
+        t_stats_results.append(f"Magnitude G vs R: t={t_stat:.2f}, p={t_p_val:.4f}")
+        
+    # B. Compare Latencies (Green vs Red) for each event
+    for event in events:
+        g_lats = lat_data[event]['G']
+        r_lats = lat_data[event]['R']
+        if len(g_lats) == len(r_lats) and len(g_lats) > 0:
+            stat, p_val = stats.wilcoxon(g_lats, r_lats)
+            t_stat, t_p_val = stats.ttest_rel(g_lats, r_lats)
+            w_stats_results.append(f"Latency ({event}) G vs R: W={stat:.1f}, p={p_val:.4f}")
+            t_stats_results.append(f"Latency ({event}) G vs R: t={t_stat:.1f}, p={t_p_val:.4f}")
+    
+    # Print results to console for your records
+    print(f"\n--- Wilcoxon Signed-Rank Test Stats for {target_tt} ---")
+    for res in w_stats_results:
+        print(res)
+    
+    # Print results to console for your records
+    print(f"\n--- Two-sided paired t-test Stats for {target_tt} ---")
+    for res in t_stats_results:
+        print(res)
+    
     # --- FIGURE: PEAK MAGNITUDE & LATENCY ---
     fig_peaks = plt.figure(figsize=(12, 5))
     gs = fig_peaks.add_gridspec(1, 2, width_ratios=[1, 2.5])

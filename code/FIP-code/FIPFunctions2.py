@@ -1411,6 +1411,13 @@ def analyze_peak_coupling(data_primary, data_secondary, time_seconds, roi_idx,
     sig_prim = data_primary[:, roi_idx]
     sig_sec = data_secondary[:, roi_idx]
     
+    # if signal is for more than one ROI, flatten:
+    if sig_prim.ndim > 1:
+        sig_prim = sig_prim.flatten()
+        sig_sec = sig_sec.flatten()
+        n_trials = data_primary.shape[1]
+        time_seconds = np.tile(time_seconds, n_trials)
+        
     # 2. Find ALL peaks in primary channel
     p_idx, _ = find_peaks(sig_prim, height=threshold, distance=fs*2)
     
@@ -1489,7 +1496,7 @@ def analyze_peak_coupling(data_primary, data_secondary, time_seconds, roi_idx,
     plt.suptitle(f"Samples (Ref: {peak_channel_name}) - {sid} (ROI {roi_idx}. \nThreshold: {threshold}    Offset: {offset})", fontsize=16)
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     
-    return fig1, fig2
+    return fig1, fig2, highlight_indices, highlight_p_idx
 
 #%% save_analysis_to_hdf5
 def save_analysis_to_hdf5(save_dir, subjectID, psth_data, psth_pooled_data, 

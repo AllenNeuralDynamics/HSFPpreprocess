@@ -32,7 +32,7 @@ import h5py
 import FIPFunctions2 as fipf
 
 
-session_id = 'FIP_835527_2026-01-12_10-31-26'
+session_id = 'FIP_840205_2026-01-12_09-58-41'
 
 SaveDir = r'C:\output_data\results\results_' + session_id
 AnalDir = r'C:\output_data' + os.sep + session_id + os.sep + 'behavior'
@@ -46,7 +46,7 @@ first_rew_idx = 0           # 0 for 836733 12/3/25
 #Roi2Vis=[0,1,2]
 Roi2Vis = [0,1]
 
-SaveFigs = 1 # set to 1 to save generated plots in results directory, 0 to skip
+SaveFigs = 0 # set to 1 to save generated plots in results directory, 0 to skip
 SaveResults = 0 # set to 1 to save preprocessed_results in fib directory, 0 to skip
 
 # params for pre-processing
@@ -342,36 +342,34 @@ n_frames = G_dF_F.shape[0]
 n_rois = len(Roi2Vis)
 G_Z = np.zeros((n_frames, n_rois))
 R_Z = np.zeros((n_frames, n_rois))
-
 for roi in Roi2Vis:
     G_Z[:,roi] = (G_dF_F[:, roi] - np.mean(G_dF_F[:, roi])) / (np.std(G_dF_F[:, roi]) + 1e-6)
     R_Z[:,roi] = (R_dF_F[:, roi] - np.mean(R_dF_F[:, roi])) / (np.std(R_dF_F[:, roi]) + 1e-6)
 
-# # Find Green Peaks, plot corresponding Red and vice versa:
-# for roi in roi_idx:
-#     fipf.plot_peak_coupling(G_dF_F_percent, R_dF_F_percent, roi, g_peak_thresh, subjectID, sampling_rate, 'green')
-#     fipf.plot_peak_coupling(R_dF_F_percent, G_dF_F_percent, roi, r_peak_thresh, subjectID, sampling_rate, 'red')
-    
-#     fig = plt.figure(figsize=(18, 10))
-
-#     plt.plot(G_dF_F[:, roi]*100, 'green', label='Green')
-#     plt.plot(R_dF_F[:, roi]*100, 'magenta', label='Red')
-
+# initialize arrays to hold indices
+G_highlighted_indices = []
+G_p_idx = []
+R_highlighted_indices = []
+R_p_idx = []
 
 for roi in roi_idx:
-    fig_greenpeaks, fig_greenexamples = fipf.analyze_peak_coupling(
+    fig_greenpeaks, fig_greenexamples, highlighted_indices, highlight_p_idx = fipf.analyze_peak_coupling(
         G_dF_F_percent, R_dF_F_percent, # DF/F
         #G_Z, R_Z, # Z-score
         time_seconds, roi, g_peak_thresh, sampling_rate, subjectID, 'green', window_sec = [2, 2]
         )
     
-    fig_redpeaks, fig_redexamples = fipf.analyze_peak_coupling(
+    G_highlighted_indices.append(highlighted_indices)
+    G_p_idx.append(highlight_p_idx)
+    
+    fig_redpeaks, fig_redexamples, highlighted_indices, highlight_p_idx = fipf.analyze_peak_coupling(
         R_dF_F_percent, G_dF_F_percent, # DF/F
         #R_Z, G_Z, # Z-score
         time_seconds, roi, r_peak_thresh, sampling_rate, subjectID, 'red', window_sec = [2, 2]
         )
     
-    
+    R_highlighted_indices.append(highlighted_indices)
+    R_p_idx.append(highlight_p_idx)
     
     if SaveFigs == 1:
         # Save the green peaks coupled to red signal + examples of uncoupled responses
@@ -389,3 +387,29 @@ if SaveResults == 1:
     preprocessed_results = fipf.save_analysis_to_hdf5(FibDir, subjectID, psth_data, psth_pooled_data, 
                               rt_data, peak_results, TSdict, TSdict_CSrewarded, 
                               Roi2Vis, sampling_rate, preW, StimPeriod)
+
+
+
+
+
+
+
+#%% Test area
+
+# Figure out which highlighted peaks are used in final plot (adjust idx_keep to the subset of the 10 that you want to keep)
+highlighted_x = G_dF_F_percent[G_p_idx[1], 1]
+highlighted_y = R_dF_F_percent[G_p_idx[1], 1]
+idx_keep = [0, 2, 3, 4, 5, 8]
+x_keep =highlighted_x[idx_keep] 
+y_keep =highlighted_y[idx_keep] 
+fig1, ax_corr = plt.subplots(figsize=(6, 6))
+ax_corr.scatter(x_keep, y_keep, color='red', alpha=0.9, s=60, label='All Peaks', edgecolors='black')
+ax_corr.set_xlim([0, 80])
+ax_corr.set_ylim([-6, 20])
+
+#%%
+fig_greenpeaks, fig_greenexamples, highlighted_indices, highlight_p_idx = fipf.analyze_peak_coupling(
+    G_dF_F_percent, R_dF_F_percent, # DF/F
+    #G_Z, R_Z, # Z-score
+    time_seconds, Roi2Vis, g_peak_thresh, sampling_rate, subjectID, 'green', window_sec = [2, 2]
+    )
