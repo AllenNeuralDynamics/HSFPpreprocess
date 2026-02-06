@@ -190,12 +190,16 @@ def plot_interleaved_chronological_heatmaps(cohort_summary, trial_types, time_ax
         
         
         # Plotting
-        sns.heatmap(g_final, ax=ax1, cmap='Greens', vmin=vmin_global, vmax=vmax_global,
+        sns.heatmap(g_final, ax=ax1, cmap='Greens', 
+                    # vmin=vmin_global, vmax=vmax_global,  # set shared colormap min/max
+                    vmin=-5, vmax=20,
                     cbar_kws={'label': '$\Delta F/F$'},
                     rasterized=True)
         ax1.set_title(f'Interleaved Green (DA) - {tt}')
         
-        sns.heatmap(r_final, ax=ax2, cmap='Oranges', vmin=vmin_global, vmax=vmax_global,
+        sns.heatmap(r_final, ax=ax2, cmap='Oranges', 
+                    # vmin=vmin_global, vmax=vmax_global,  # set shared colormap min/max
+                    vmin=-5, vmax=20,
                     cbar_kws={'label': '$\Delta F/F$'},
                     rasterized=True)
         ax2.set_title(f'Interleaved Red (Calcium) - {tt}')

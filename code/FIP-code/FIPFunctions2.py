@@ -1419,7 +1419,7 @@ def analyze_peak_coupling(data_primary, data_secondary, time_seconds, roi_idx,
         time_seconds = np.tile(time_seconds, n_trials)
         
     # 2. Find ALL peaks in primary channel
-    p_idx, _ = find_peaks(sig_prim, height=threshold, distance=fs*2)
+    p_idx, _ = find_peaks(sig_prim, height=threshold, distance=fs*2) # at least 2 seconds apart
     
     if len(p_idx) < 2:
         print(f"Insufficient peaks found in ROI {roi_idx}")
