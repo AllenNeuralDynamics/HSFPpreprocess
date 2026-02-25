@@ -30,3 +30,5 @@ results/
 *.log
 *.tmp
 *~
+
+.vscode
