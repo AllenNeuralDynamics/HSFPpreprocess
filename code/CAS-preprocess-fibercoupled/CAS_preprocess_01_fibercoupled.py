@@ -20,11 +20,11 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # constants
-SAT_VAL = 12000 # saturation value of camera (12000 Smrithi, 7000 Carrie)
-FIBER_WIDTH = 60 # width of fiber (in pixels) (60 Smrithi, 40 Carrie)
-USE_LASER_1 = 1 # first laser used for calculating affine transformation (1 Smrithi, 0 Carrie)
+SAT_VAL = 7000 # saturation value of camera (12000 Smrithi, 7000 Carrie)
+FIBER_WIDTH = 40 # width of fiber (in pixels) (60 Smrithi, 40 Carrie)
+USE_LASER_1 = 0 # first laser used for calculating affine transformation (1 Smrithi, 0 Carrie)
 USE_LASER_2 = 2 # second laser used for calculating affine transformation (2 Smrithi, 2 Carrie)
-DIST_THRESH = 100 # distance between laser peaks (100 Smrithi, 50 Carrie)
+DIST_THRESH = 50 # distance between laser peaks (100 Smrithi, 50 Carrie)
 
 session_id = "836732_2025-12-03T10_23_42.2755328-08_00" # NEED TO CORRECT FOR CODE OCEAN
 
