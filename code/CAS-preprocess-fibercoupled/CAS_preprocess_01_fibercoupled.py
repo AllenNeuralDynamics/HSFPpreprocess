@@ -207,99 +207,89 @@ if __name__ == '__main__':
     print("Starting HSFP image calibration processing step 1...")
         
     # Settings
-    data_dir = r"C:\output_data\\" # NEED TO CORRECT FOR CODE OCEAN
+    data_dir = "/data"
+    results_base_dir = "/results"
     
-    # Get session ID
-   
-    path, calib_path = load_session_paths(data_dir, session_id)
-    metadata = load_calibration_metadata(calib_path)
-    tiff_dir = os.path.join(calib_path, 'Tiffs')
-    img2d = load_and_average_tiff(tiff_dir)
-
-    # Camera offsets
-    if hasattr(metadata, "XOffset"):
-        Xoffset = int(metadata.XOffset[0])
-    else:
-        Xoffset = int(metadata.Left[0])
-
-    # Use 'YOffset' if available, otherwise fall back to 'Top'
-    if hasattr(metadata, "YOffset"):
-        Yoffset = int(metadata.YOffset[0])
-    else:
-        Yoffset = int(metadata.Top[0])
+    # Get list of session IDs (subfolders in data_dir)
+    session_ids = [d for d in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, d))]
+    
+    if not session_ids:
+        raise FileNotFoundError(f"No session subfolders found in {data_dir}")
+    
+    for session_id in session_ids:
+        print(f"Processing session: {session_id}")
         
+        try:
+            path, calib_path = load_session_paths(data_dir, session_id)
+            metadata = load_calibration_metadata(calib_path)
+            tiff_dir = os.path.join(calib_path, 'Tiffs')
+            img2d = load_and_average_tiff(tiff_dir)
+
+            # Camera offsets
+            if hasattr(metadata, "XOffset"):
+                Xoffset = int(metadata.XOffset[0])
+            else:
+                Xoffset = int(metadata.Left[0])
+
+            # Use 'YOffset' if available, otherwise fall back to 'Top'
+            if hasattr(metadata, "YOffset"):
+                Yoffset = int(metadata.YOffset[0])
+            else:
+                Yoffset = int(metadata.Top[0])
+                
+                
+            # Find laser positions
+            h_peaks, v_peaks, img_to_unskew = find_laser_positions(img2d)
+            
+            # Rotate image
+            img_rotated, theta_r = rotate_image(img_to_unskew, h_peaks, v_peaks)
+            
+            # Calculate centers of each laser after rotation
+            h_line = np.mean(img_rotated, axis=0)
+            h_peaks_rot, _ = find_peaks(h_line, height=2000, distance=50)
+
+            # Analyze fibers
+            v_width1, h_width1 = analyze_laser(img_rotated, h_peaks_rot, use_laser=USE_LASER_1)
+            v_width2, h_width2 = analyze_laser(img_rotated, h_peaks_rot, use_laser=USE_LASER_2)
+
+            # Define affine points and transform image
+            pt1, pt2, pt3 = [h_width1[0], v_width1[0]], [h_width1[1], v_width1[1]], [h_width2[0], v_width2[0]]
+            pt4, pt5, pt6 = [h_width1[1], v_width1[0]], [h_width1[1], v_width1[1]], [h_width2[1], v_width2[0]]
+
+            img_final = perform_affine_transform(img_rotated, [pt1, pt2, pt3], [pt4, pt5, pt6])
+
+            # Store fiber boundaries
+            h_line_final = np.mean(img_final, axis=0)
+            h_peaks_final, _ = find_peaks(h_line_final, height=2000, distance=50)
+            
+            fiber1, fiber2 = store_fiber_boundaries(img_final, h_peaks_final, use_laser=USE_LASER_2)
+            
+
+            # Save results
+            pt1[0] = int(pt1[0] + Xoffset)
+            pt2[0] = int(pt2[0] + Xoffset)
+            pt3[0] = int(pt3[0] + Xoffset)
+            pt4[0] = int(pt4[0] + Xoffset)
+            pt5[0] = int(pt5[0] + Xoffset)
+            pt6[0] = int(pt6[0] + Xoffset)
+            pt1[1] = int(pt1[1] + Yoffset)
+            pt2[1] = int(pt2[1] + Yoffset)
+            pt3[1] = int(pt3[1] + Yoffset)
+            pt4[1] = int(pt4[1] + Yoffset)
+            pt5[1] = int(pt5[1] + Yoffset)
+            pt6[1] = int(pt6[1] + Yoffset)
+            fiber1[0] = int(fiber1[0] + Yoffset)
+            fiber1[1] = int(fiber1[1] + Yoffset)
+            fiber2[0] = int(fiber2[0] + Yoffset)
+            fiber2[1] = int(fiber2[1] + Yoffset)
+            
+            results_dir = Path(results_base_dir) / session_id
+            save_results(img_final, theta_r, [pt1, pt2, pt3, pt4, pt5, pt6], [fiber1, fiber2], Xoffset, Yoffset, results_dir)
+            
+            print(f"Calibration processing step 1 complete for session {session_id}.")
         
-    # Find laser positions
-    h_peaks, v_peaks, img_to_unskew = find_laser_positions(img2d)
+        except Exception as e:
+            print(f"Error processing session {session_id}: {e}")
+            continue
     
-    # Rotate image
-    img_rotated, theta_r = rotate_image(img_to_unskew, h_peaks, v_peaks)
-    
-    # Calculate centers of each laser after rotation
-    h_line = np.mean(img_rotated, axis=0)
-    h_peaks_rot, _ = find_peaks(h_line, height=2000, distance=50)
-
-#     v_peaks_rot = np.zeros(np.size(h_peaks_rot))
-#     for i, x in enumerate(h_peaks_rot):
-#         v_line = img_rotated[:, x].copy()
-#         v_line[v_line < sat_val] = 0
-#         idx = np.nonzero(np.diff(v_line))[0]
-
-#         if len(idx) >= 2:  # Need at least 2 edges
-#             v_peaks_rot[i] = int(np.round((idx[0] + idx[-1]) / 2))
-#         else:
-#             print(f"Warning: Could not find edges for laser at x={x}")
-#     v_peaks_rot = v_peaks_rot.astype(int)
-    
-    # Analyze fibers
-    v_width1, h_width1 = analyze_laser(img_rotated, h_peaks_rot, use_laser=USE_LASER_1)
-    v_width2, h_width2 = analyze_laser(img_rotated, h_peaks_rot, use_laser=USE_LASER_2)
-
-    # Define affine points and transform image
-    pt1, pt2, pt3 = [h_width1[0], v_width1[0]], [h_width1[1], v_width1[1]], [h_width2[0], v_width2[0]]
-    pt4, pt5, pt6 = [h_width1[1], v_width1[0]], [h_width1[1], v_width1[1]], [h_width2[1], v_width2[0]]
-
-    img_final = perform_affine_transform(img_rotated, [pt1, pt2, pt3], [pt4, pt5, pt6])
-
-    # Store fiber boundaries
-    h_line_final = np.mean(img_final, axis=0)
-    h_peaks_final, _ = find_peaks(h_line_final, height=2000, distance=50)
-    
-#     v_peaks_final = np.zeros(np.size(h_peaks_final))
-#     for i, x in enumerate(h_peaks_final):
-#         v_line = img_final[:, x].copy()
-#         v_line[v_line < SAT_VAL] = 0
-#         idx = np.nonzero(np.diff(v_line))[0]
-
-#         if len(idx) >= 2:  # Need at least 2 edges
-#             v_peaks_final[i] = int(np.round((idx[0] + idx[-1]) / 2))
-#         else:
-#             print(f"Warning: Could not find edges for laser at x={x}")
-#     v_peaks_final = v_peaks_final.astype(int)
-    
-    fiber1, fiber2 = store_fiber_boundaries(img_final, h_peaks_final, use_laser=USE_LASER_2)
-    
-
-    # Save results
-    pt1[0] = int(pt1[0] + Xoffset)
-    pt2[0] = int(pt2[0] + Xoffset)
-    pt3[0] = int(pt3[0] + Xoffset)
-    pt4[0] = int(pt4[0] + Xoffset)
-    pt5[0] = int(pt5[0] + Xoffset)
-    pt6[0] = int(pt6[0] + Xoffset)
-    pt1[1] = int(pt1[1] + Yoffset)
-    pt2[1] = int(pt2[1] + Yoffset)
-    pt3[1] = int(pt3[1] + Yoffset)
-    pt4[1] = int(pt4[1] + Yoffset)
-    pt5[1] = int(pt5[1] + Yoffset)
-    pt6[1] = int(pt6[1] + Yoffset)
-    fiber1[0] = int(fiber1[0] + Yoffset)
-    fiber1[1] = int(fiber1[1] + Yoffset)
-    fiber2[0] = int(fiber2[0] + Yoffset)
-    fiber2[1] = int(fiber2[1] + Yoffset)
-    
-    results_path = os.path.join(path, 'fib') # NEED TO CORRECT FOR CODE OCEAN
-    results_dir = Path(results_path)
-    save_results(img_final, theta_r, [pt1, pt2, pt3, pt4, pt5, pt6], [fiber1, fiber2], Xoffset, Yoffset, results_dir)
-    
-    print("Calibration processing step 1 complete.")
+    print("All sessions processed.")
