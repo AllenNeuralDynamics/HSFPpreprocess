@@ -25,7 +25,6 @@ USE_LASER_1 = 1 # first laser used for calculating affine transformation (1 Smri
 USE_LASER_2 = 2 # second laser used for calculating affine transformation (2 Smrithi, 2 Carrie)
 DIST_THRESH = 100 # distance between laser peaks (100 Smrithi, 50 Carrie)
 
-# session_id = "836732_2025-12-03T10_23_42.2755328-08_00" # NEED TO CORRECT FOR CODE OCEAN
 
 def load_session_paths(data_dir, session_id):
     """Create paths to session data and calibration files."""
