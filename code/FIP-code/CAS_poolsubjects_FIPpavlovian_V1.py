@@ -30,7 +30,7 @@ session_ids = [
 ]
 
 
-SaveDir = r'C:\output_data\results\combined'
+SaveDir = r'C:\output_data\results\combined_20260422'
 # 1. Ensure the SaveDir exists before saving
 if not os.path.exists(SaveDir):
     os.makedirs(SaveDir)
@@ -88,14 +88,15 @@ for sid, data in cohort_data.items():
     psth_all = data['psth_data']
     peaks_all = data['peak_results']
     
-    cohort_summary[sid] = {'G': {}, 'R': {}}
+    #cohort_summary[sid] = {'G': {}, 'R': {}}
+    cohort_summary[sid] = {'G': {}, 'R': {}, 'C': {}}
     
     # Process each trial type found in the PSTH data
     trial_types = [k.replace('G_', '').replace('_base', '') 
                    for k in psth_all.keys() if k.startswith('G_')]
 
     for tt in trial_types:
-        for sig in ['G', 'R']:
+        for sig in ['G', 'R', 'C']:
             key = f"{sig}_{tt}_base"
             if key in psth_all:
                 # psth_all[key] shape is (Time, ROIs, Trials)
@@ -132,7 +133,7 @@ if len(cohort_summary) == 1: axes = [axes]
 for i, (sid, sig_data) in enumerate(cohort_summary.items()):
     ax = axes[i]
     
-    for sig, color, label_prefix in zip(['G', 'R'], ['green', 'red'], ['Green', 'Red']):
+    for sig, color, label_prefix in zip(['G', 'R', 'C'], ['green', 'red', 'blue'], ['Green', 'Red', 'Control']):
         # psth shape is (Time, Trials)
         psth = sig_data[sig][target_tt]['psth']
         n_trials = psth.shape[1]
@@ -171,8 +172,9 @@ for target_tt in trial_types_to_plot:
     # Logic to gather traces (assumes cohort_summary is already populated)
     grand_psth_g = [np.nanmean(cohort_summary[sid]['G'][target_tt]['psth'], axis=1) for sid in cohort_summary]
     grand_psth_r = [np.nanmean(cohort_summary[sid]['R'][target_tt]['psth'], axis=1) for sid in cohort_summary]
+    grand_psth_c = [np.nanmean(cohort_summary[sid]['C'][target_tt]['psth'], axis=1) for sid in cohort_summary]
     
-    for data_arr, col, lbl in [(np.array(grand_psth_g), 'green', 'Green'), (np.array(grand_psth_r), 'red', 'Red')]:
+    for data_arr, col, lbl in [(np.array(grand_psth_g), 'green', 'Green'), (np.array(grand_psth_r), 'red', 'Red'), (np.array(grand_psth_c), 'blue', 'Control')]:
         mu = np.nanmean(data_arr, axis=0)
         sem = np.nanstd(data_arr, axis=0) / np.sqrt(data_arr.shape[0])
         ax_t.plot(time_x, mu, color=col, lw=2, label=lbl)
@@ -193,14 +195,14 @@ for target_tt in trial_types_to_plot:
     events = ['cs', 'rew', 'lick']
     event_labels = ['vs CS Onset', 'vs Reward', 'vs First Lick']
     
-    mag_data = {'G': [], 'R': []}
-    lat_data = {e: {'G': [], 'R': []} for e in events}
+    mag_data = {'G': [], 'R': [], 'C': []}
+    lat_data = {e: {'G': [], 'R': [], 'C': []} for e in events}
 
     for sid, data in cohort_data.items():
         rois = data['Roi2Vis']
         peaks_all = data['peak_results']
         
-        for sig in ['G', 'R']:
+        for sig in ['G', 'R', 'C']:
             # Magnitude: One value per mouse (averaged over ROIs and Trials)
             m_key = f"{sig}_{target_tt}_base_peak_mag"
             if m_key in peaks_all:
