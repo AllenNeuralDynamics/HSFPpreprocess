@@ -37,7 +37,7 @@ import PreprocessingFunctions2 as pf
 
 session_id = 'FIP_836732_2025-11-26_09-46-26'
 
-SaveDir = r'C:\output_data\results\results_' + session_id
+SaveDir = r'C:\output_data\results\results_20260422' + session_id
 AnalDir = r'C:\output_data' + os.sep + session_id + os.sep + 'behavior'
 # AnalDir = r'C:\output_data\FIP_836732_2025-12-03_10-23-43\behavior'
 
