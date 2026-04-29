@@ -12,6 +12,7 @@ import glob
 import matplotlib.pyplot as plt
 import seaborn as sns
 import scipy.stats as stats
+from scipy import signal
 
 #%% loading h5py data back in
 def load_fip_h5(file_path):
@@ -63,6 +64,86 @@ def load_fip_h5(file_path):
     return (psth_data, psth_pooled_data, rt_data, peak_results, 
             TSdict, TSdict_CSrewarded, Roi2Vis, 
             sampling_rate, preW, subjectID, StimPeriod)
+
+
+#%% load cohort data
+def load_cohort(session_ids, SessionDir):
+    """Load FIP sessions from a list of session IDs and return cohort_data dict."""
+    cohort_data = {}
+
+    for session_id in session_ids:
+        session_path = SessionDir + os.sep + session_id + os.sep + 'fib'
+        print(f"Searching in: {session_path}")
+
+        h5_files = glob.glob(os.path.join(session_path, "*.h5"))
+
+        if not h5_files:
+            if os.path.exists(session_path):
+                print(f"Folder exists, but no .h5 found. Folder contains: {os.listdir(session_path)}")
+            else:
+                print(f"Error: The directory path does not exist: {session_path}")
+            continue
+
+        target_file = h5_files[0]
+        print(f"Found file: {os.path.basename(target_file)}")
+
+        try:
+            loaded_vars = load_fip_h5(target_file)
+            cohort_data[session_id] = {
+                'psth_data':   loaded_vars[0],
+                'psth_pooled': loaded_vars[1],
+                'rt_data':     loaded_vars[2],
+                'peak_results':loaded_vars[3],
+                'TSdict':      loaded_vars[4],
+                'TSdict_rew':  loaded_vars[5],
+                'Roi2Vis':     loaded_vars[6],
+                'fs':          loaded_vars[7],
+                'preW':        loaded_vars[8],
+                'subjectID':   loaded_vars[9],
+                'StimPeriod':  loaded_vars[10]
+            }
+        except Exception as e:
+            print(f"Failed to load {session_id}: {e}")
+
+    print(f"\nCohort Loading Complete. Total animals loaded: {len(cohort_data)}")
+    return cohort_data
+
+
+#%% build the cohort summary
+def build_cohort_summary(cohort_data):
+    """Average trials within each animal and merge into a cohort summary dict."""
+    cohort_summary = {}
+
+    for sid, data in cohort_data.items():
+        rois = data['Roi2Vis']
+        psth_all = data['psth_data']
+        peaks_all = data['peak_results']
+
+        cohort_summary[sid] = {'G': {}, 'R': {}, 'C': {}}
+
+        trial_types = [k.replace('G_', '').replace('_base', '')
+                       for k in psth_all.keys() if k.startswith('G_')]
+
+        for tt in trial_types:
+            for sig in ['G', 'R', 'C']:
+                key = f"{sig}_{tt}_base"
+                if key in psth_all:
+                    # psth_all[key] shape is (Time, ROIs, Trials)
+                    roi_subset = psth_all[key][:, rois, :]
+                    subject_psth = np.nanmean(roi_subset, axis=1)
+
+                    peak_key = f"{key}_peak_mag"
+                    if peak_key in peaks_all:
+                        subject_peaks = np.nanmean(peaks_all[peak_key][rois, :], axis=0)
+                    else:
+                        subject_peaks = np.array([])
+
+                    cohort_summary[sid][sig][tt] = {
+                        'psth': subject_psth,
+                        'peaks': subject_peaks
+                    }
+
+    return cohort_summary
 
 
 
@@ -221,6 +302,398 @@ def plot_interleaved_chronological_heatmaps(cohort_summary, trial_types, time_ax
         
         plt.show()
         
+
+#%% plot trial by trial peak comparison
+def plot_trial_peak_comparison(cohort_data, trial_types_to_plot, results_dir):
+    """Plot trial-by-trial Green vs Red peak amplitude coupling for each trial type."""
+    print("\nRunning trial-by-trial correlation comparisons...")
+
+    for target_tt in trial_types_to_plot:
+        all_trials_g_peaks = []
+        all_trials_r_peaks = []
+
+        for _, data in cohort_data.items():
+            m_key_g = f"G_{target_tt}_base_peak_mag"
+            m_key_r = f"R_{target_tt}_base_peak_mag"
+            rois = data['Roi2Vis']
+
+            if m_key_g in data['peak_results'] and m_key_r in data['peak_results']:
+                g_pts = data['peak_results'][m_key_g][rois, :].flatten()
+                r_pts = data['peak_results'][m_key_r][rois, :].flatten()
+                all_trials_g_peaks.extend(g_pts)
+                all_trials_r_peaks.extend(r_pts)
+
+        _, ax1 = plt.subplots(figsize=(5, 5))
+
+        x, y = np.array(all_trials_r_peaks), np.array(all_trials_g_peaks)
+        mask = ~np.isnan(x) & ~np.isnan(y)
+        if len(x[mask]) > 1:
+            slope, intercept, r_val, p_val, _ = stats.linregress(x[mask], y[mask])
+            ax1.scatter(x[mask], y[mask], color='gray', alpha=0.3, s=15, edgecolors='none')
+            ax1.plot(x[mask], slope * x[mask] + intercept, color='red',
+                     label=f'R²={r_val**2:.3f}\n p={p_val}')
+            ax1.set_title(f'Amplitude Coupling ({target_tt})')
+            ax1.set_xlabel('Red Peak (% ∆F/F)')
+            ax1.set_ylabel('Green Peak (% ∆F/F)')
+            ax1.legend(frameon=False)
+
+        sns.despine()
+        plt.tight_layout()
+
+        peakcomp_path = os.path.join(results_dir, f'Peak-Amplitude_Trial-by-Trial_{target_tt}.svg')
+        plt.savefig(peakcomp_path, format='svg', transparent=True)
+        plt.show()
+
+
+#%% plot cross correlation
+def plot_cross_correlation(cohort_summary, cohort_data, trial_types_to_plot, results_dir):
+    """Compute and plot trial-averaged G/R cross-correlations. Returns source data dict keyed by trial type."""
+    print("\n--- Running Temporal Lag Analysis ---")
+    xcorr_data = {}
+
+    for target_tt in trial_types_to_plot:
+        all_subject_xcorrs = []
+        all_subject_trial_xcorrs = {} # keyed by sid; each value is (Trials, Lags)
+        all_subject_g_zscore = {}
+        all_subject_r_zscore = {}
+        # sampling rate is assumed to be consistent across sessions
+        fs = cohort_data[list(cohort_data.keys())[0]]['fs']
+
+        for sid in cohort_data:
+            # Retrieve trial-averaged PSTHs for this subject; shape is (Time, Trials)
+            g_psths = cohort_summary[sid]['G'][target_tt]['psth']
+            r_psths = cohort_summary[sid]['R'][target_tt]['psth']
+
+            n_trials = g_psths.shape[1]
+            if n_trials < 2:
+                continue
+            
+            # --- Compute trial-by-trial cross-correlations ---
+            trial_xcorrs = []
+            g_zscored_trials = []
+            r_zscored_trials = []
+            for t in range(n_trials):
+                # Z-score each trial so correlation is amplitude-independent
+                # A small epsilon (1e-6) prevents division by zero on flat traces
+                g_n = (g_psths[:, t] - np.mean(g_psths[:, t])) / (np.std(g_psths[:, t]) + 1e-6)
+                r_n = (r_psths[:, t] - np.mean(r_psths[:, t])) / (np.std(r_psths[:, t]) + 1e-6)
+                g_zscored_trials.append(g_n)
+                r_zscored_trials.append(r_n)
+                # Full cross-correlation: output length is (2*N - 1); normalize
+                # by N so the peak value equals the Pearson r at that lag
+                trial_xcorrs.append(signal.correlate(g_n, r_n, mode='full') / len(g_n))
+
+            # Preserve per-trial xcorrs for this subject before averaging; shape is (Trials, Lags)
+            all_subject_trial_xcorrs[sid] = np.array(trial_xcorrs)
+            # Preserve Z-scored signals that fed into the xcorr; shape (Trials, Time)
+            all_subject_g_zscore[sid] = np.array(g_zscored_trials)
+            all_subject_r_zscore[sid] = np.array(r_zscored_trials)
+            
+            # Average cross-correlations across trials to get one curve per subject
+            all_subject_xcorrs.append(np.mean(trial_xcorrs, axis=0))
+
+        # Build the lag axis in seconds: 0 = no lag, negative means green leads, positive means red leads
+        lag_times = np.arange(-(len(all_subject_xcorrs[0]) // 2),
+                               (len(all_subject_xcorrs[0]) // 2) + 1) / fs
+        
+        # Grand average and SEM across subjects
+        real_mu  = np.nanmean(all_subject_xcorrs, axis=0)
+        real_sem = np.nanstd(all_subject_xcorrs, axis=0) / np.sqrt(len(all_subject_xcorrs))
+        
+        # Lag (in seconds) at which the cross-correlation peaks
+        peak_lag = lag_times[np.argmax(real_mu)]
+
+        # --- Plot ---
+        _, ax = plt.subplots(figsize=(7, 5))
+        ax.plot(lag_times, real_mu, color='purple', lw=2, label='Real Data')
+        ax.fill_between(lag_times, real_mu - real_sem, real_mu + real_sem, color='purple', alpha=0.2)
+        ax.axvline(0, color='black', alpha=0.3)
+        ax.axhline(0, color='black', alpha=0.3)
+        ax.axvline(peak_lag, color='red', linestyle=':', label=f'Peak Lag: {peak_lag*1000:.1f}ms')
+        ax.set_title(f'Temporal Lag: {target_tt}')
+        ax.set_xlabel('Time (s)\n<--- Green Leads | Red Leads --->')
+        ax.set_ylabel('Correlation Coefficient')
+        ax.set_xlim([-1.0, 1.0])
+        ax.set_ylim([-0.1, 1.0])
+        ax.legend(frameon=False)
+        sns.despine()
+
+        plt.savefig(os.path.join(results_dir, f'CrossCorr_{target_tt}.svg'), format='svg')
+        plt.show()
+
+        # Collect source data for downstream use/export
+        xcorr_data[target_tt] = {
+            'lag_times':      lag_times,
+            'g_zscore':       all_subject_g_zscore,      # per-subject, per-trial Z-scored G; dict of (Trials, Time)
+            'r_zscore':       all_subject_r_zscore,      # per-subject, per-trial Z-scored R; dict of (Trials, Time)
+            'trial_xcorrs':   all_subject_trial_xcorrs,     # per-subject, per-trial
+            'subject_xcorrs': all_subject_xcorrs,           # per-subject, trial-averaged
+            'real_mu':        real_mu,
+            'real_sem':       real_sem,
+            'peak_lag':       peak_lag,
+        }
+
+    return xcorr_data
+
+#%% plot cross correlation for individual trials (both ROIs)
+def plot_cross_correlation_all_trials(cohort_summary, cohort_data, trial_types_to_plot, results_dir):
+    """Compute and G/R cross-correlations for all trials. Returns source data dict keyed by trial type."""
+    print("\n--- Running Temporal Lag Analysis ---")
+    xcorr_data = {}
+
+    for target_tt in trial_types_to_plot:
+        all_subject_xcorrs = []
+        all_subject_trial_xcorrs = {}  # keyed by sid; each value is (Trials, Lags)
+        all_subject_g_zscore = {}      # keyed by sid; each value is (Trials, Time)
+        all_subject_r_zscore = {}      # keyed by sid; each value is (Trials, Time)
+        # Sampling rate is assumed to be consistent across sessions
+        fs = cohort_data[list(cohort_data.keys())[0]]['fs']
+
+        g_lookup = 'G_' + target_tt + '_base'
+        r_lookup = 'R_' + target_tt + '_base'
+
+        for sid in cohort_data:
+            # Retrieve trial-averaged PSTHs for this subject; shape is (Time, Trials)
+            g_psths = cohort_data[sid]['psth_pooled'][g_lookup]
+            r_psths = cohort_data[sid]['psth_pooled'][r_lookup]
+
+            # remove the dimensions of size 1
+            g_psths = g_psths.squeeze()
+            r_psths = r_psths.squeeze()
+
+            n_trials = g_psths.shape[1]
+            if n_trials < 2:
+                continue
+
+            # --- Compute trial-by-trial cross-correlations ---
+            trial_xcorrs = []
+            g_zscored_trials = []
+            r_zscored_trials = []
+            for t in range(n_trials):
+                # Z-score each trial so correlation is amplitude-independent
+                # A small epsilon (1e-6) prevents division by zero on flat traces
+                g_n = (g_psths[:, t] - np.mean(g_psths[:, t])) / (np.std(g_psths[:, t]) + 1e-6)
+                r_n = (r_psths[:, t] - np.mean(r_psths[:, t])) / (np.std(r_psths[:, t]) + 1e-6)
+                g_zscored_trials.append(g_n)
+                r_zscored_trials.append(r_n)
+                # Full cross-correlation: output length is (2*N - 1); normalise by N
+                # so the peak value equals the Pearson r at that lag
+                trial_xcorrs.append(signal.correlate(g_n, r_n, mode='full') / len(g_n))
+
+            # Preserve per-trial xcorrs for this subject before averaging; shape (Trials, Lags)
+            all_subject_trial_xcorrs[sid] = np.array(trial_xcorrs)
+            # Preserve Z-scored signals that fed into the xcorr; shape (Trials, Time)
+            all_subject_g_zscore[sid] = np.array(g_zscored_trials)
+            all_subject_r_zscore[sid] = np.array(r_zscored_trials)
+
+            # Average cross-correlations across trials to get one curve per subject
+            all_subject_xcorrs.append(np.mean(trial_xcorrs, axis=0))
+
+        # Build the lag axis in seconds: 0 = no lag, negative = Green leads, positive = Red leads
+        lag_times = np.arange(-(len(all_subject_xcorrs[0]) // 2),
+                               (len(all_subject_xcorrs[0]) // 2) + 1) / fs
+
+        # Grand average and SEM across subjects
+        real_mu  = np.nanmean(all_subject_xcorrs, axis=0)
+        real_sem = np.nanstd(all_subject_xcorrs, axis=0) / np.sqrt(len(all_subject_xcorrs))
+
+        # Lag (in seconds) at which the cross-correlation peaks
+        peak_lag = lag_times[np.argmax(real_mu)]
+
+        # --- Plot ---
+        _, ax = plt.subplots(figsize=(7, 5))
+        ax.plot(lag_times, real_mu, color='purple', lw=2, label='Real Data')
+        # Shaded band shows ± 1 SEM across subjects
+        ax.fill_between(lag_times, real_mu - real_sem, real_mu + real_sem, color='purple', alpha=0.2)
+        ax.axvline(0, color='black', alpha=0.3)       # reference: zero lag
+        ax.axhline(0, color='black', alpha=0.3)       # reference: zero correlation
+        ax.axvline(peak_lag, color='red', linestyle=':', label=f'Peak Lag: {peak_lag*1000:.1f}ms')
+        ax.set_title(f'Temporal Lag: {target_tt}')
+        ax.set_xlabel('Time (s)\n<--- Green Leads | Red Leads --->')
+        ax.set_ylabel('Correlation Coefficient')
+        ax.set_xlim([-1.0, 1.0])
+        ax.set_ylim([-0.1, 1.0])
+        ax.legend(frameon=False)
+        sns.despine()
+
+        plt.savefig(os.path.join(results_dir, f'CrossCorr_{target_tt}.svg'), format='svg')
+        plt.show()
+
+        # Collect source data for downstream use or export
+        xcorr_data[target_tt] = {
+            'lag_times':      lag_times,
+            'g_zscore':       all_subject_g_zscore,      # per-subject, per-trial Z-scored G; dict of (Trials, Time)
+            'r_zscore':       all_subject_r_zscore,      # per-subject, per-trial Z-scored R; dict of (Trials, Time)
+            'trial_xcorrs':   all_subject_trial_xcorrs,  # per-subject, per-trial xcorr; dict of (Trials, Lags)
+            'subject_xcorrs': all_subject_xcorrs,        # per-subject average curves
+            'real_mu':        real_mu,
+            'real_sem':       real_sem,
+            'peak_lag':       peak_lag,
+        }
+
+    return xcorr_data
+
+
+
+#%% plot cross-correlation FINAL version used in paper 
+def plot_cross_correlation_final(cohort_data, trial_types_to_plot, results_dir):
+    """
+    Compute G/R cross-correlations from raw per-ROI psth_data.
+
+    Pipeline per trial type:
+      1. Extract (Time, ROI, Trial) arrays directly from cohort_data['psth_data']
+      2. Restrict to Roi2Vis (valid recorded ROIs) for each subject
+      3. Z-score each trial for each ROI
+      4. Cross-correlate G vs R per trial per ROI
+      5. Average across trials  -> one curve per ROI
+      6. Average across ROIs    -> one curve per subject
+      7. Average across subjects -> grand mean +/- SEM for plotting
+
+    Returns source data dict keyed by trial type.
+    """
+    print("\n--- Running Temporal Lag Analysis (per-ROI) ---")
+    xcorr_data = {}
+
+    for target_tt in trial_types_to_plot:
+        g_key = f'G_{target_tt}_base'
+        r_key = f'R_{target_tt}_base'
+
+        fs = cohort_data[list(cohort_data.keys())[0]]['fs']
+
+        # Nested storage: sid -> roi -> array
+        g_zscore_all     = {}   # (Trials, Time)  per ROI per subject
+        r_zscore_all     = {}   # (Trials, Time)  per ROI per subject
+        trial_xcorrs_all = {}   # (Trials, Lags)  per ROI per subject
+        roi_xcorrs_all   = {}   # (Lags,)         trial-averaged, per ROI per subject
+        subject_xcorrs   = []   # (Lags,)         ROI-averaged, one per subject
+        subject_sids     = []   # sid order matching subject_xcorrs
+
+        for sid, data in cohort_data.items():
+            rois      = data['Roi2Vis']   # indices of valid ROIs for this subject
+            psth_data = data['psth_data']
+
+            if g_key not in psth_data or r_key not in psth_data:
+                print(f"  Skipping {sid}: missing {g_key} or {r_key}")
+                continue
+
+            # Shape: (Time, TotalROIs, Trials)
+            g_all    = psth_data[g_key]
+            r_all    = psth_data[r_key]
+            n_trials = g_all.shape[2]
+
+            if n_trials < 2:
+                continue
+
+            g_zscore_all[sid]     = {}
+            r_zscore_all[sid]     = {}
+            trial_xcorrs_all[sid] = {}
+            roi_xcorrs_all[sid]   = {}
+            roi_mean_xcorrs       = []  # collects one trial-averaged curve per ROI
+
+            for roi in rois:
+                g_trials_zscored = []
+                r_trials_zscored = []
+                this_roi_xcorrs  = []
+
+                for t in range(n_trials):
+                    g_t = g_all[:, roi, t]
+                    r_t = r_all[:, roi, t]
+
+                    # Z-score so correlation is amplitude-independent;
+                    # epsilon prevents divide-by-zero on flat traces
+                    g_n = (g_t - np.mean(g_t)) / (np.std(g_t) + 1e-6)
+                    r_n = (r_t - np.mean(r_t)) / (np.std(r_t) + 1e-6)
+
+                    g_trials_zscored.append(g_n)
+                    r_trials_zscored.append(r_n)
+
+                    # Normalise by N so peak approximates Pearson r at that lag
+                    this_roi_xcorrs.append(signal.correlate(g_n, r_n, mode='full') / len(g_n))
+
+                # Store per-trial data for this ROI; rows = trials
+                g_zscore_all[sid][roi]     = np.array(g_trials_zscored)  # (Trials, Time)
+                r_zscore_all[sid][roi]     = np.array(r_trials_zscored)  # (Trials, Time)
+                trial_xcorrs_all[sid][roi] = np.array(this_roi_xcorrs)   # (Trials, Lags)
+
+                # Step 5: average across trials -> one curve for this ROI
+                roi_mean = np.mean(this_roi_xcorrs, axis=0)
+                roi_xcorrs_all[sid][roi] = roi_mean
+                roi_mean_xcorrs.append(roi_mean)
+
+            # Step 6: average across valid ROIs -> one curve for this subject
+            subject_xcorrs.append(np.mean(roi_mean_xcorrs, axis=0))
+            subject_sids.append(sid)
+
+        # Step 7: grand average and SEM across subjects
+        lag_times = np.arange(-(len(subject_xcorrs[0]) // 2),
+                               (len(subject_xcorrs[0]) // 2) + 1) / fs
+        real_mu  = np.nanmean(subject_xcorrs, axis=0)
+        real_sem = np.nanstd(subject_xcorrs, axis=0) / np.sqrt(len(subject_xcorrs))
+        peak_lag = lag_times[np.argmax(real_mu)]
+
+        # --- Plot ---
+        _, ax = plt.subplots(figsize=(5, 5))
+        ax.plot(lag_times, real_mu, color='purple', lw=2, label='Cross-Correlation')
+        ax.fill_between(lag_times, real_mu - real_sem, real_mu + real_sem, color='purple', alpha=0.2)
+        ax.axvline(0, color='black', alpha=0.3)       # reference: zero lag
+        ax.axhline(0, color='black', alpha=0.3)       # reference: zero correlation
+        ax.axvline(peak_lag, color='red', linestyle=':', label=f'Peak Lag: {peak_lag*1000:.1f}ms')
+        ax.set_title(f'Temporal Lag: {target_tt}')
+        ax.set_xlabel('Time (s)\n<--- Green Leads | Red Leads --->')
+        ax.set_ylabel('Correlation Coefficient')
+        ax.set_xlim([-1.0, 1.0])
+        ax.set_ylim([-0.1, 1.0])
+        ax.legend(frameon=False)
+        sns.despine()
+
+        plt.savefig(os.path.join(results_dir, f'CrossCorr_Final_{target_tt}.svg'), format='svg')
+        plt.show()
+
+        # --- Per-subject subplot (1 x N) ---
+        n_sids = len(subject_sids)
+        _, axes = plt.subplots(1, n_sids, figsize=(5 * n_sids, 5), sharey=True)
+        if n_sids == 1:
+            axes = [axes]  # ensure iterable when only one subject
+
+        for ax_s, sid, xcorr in zip(axes, subject_sids, subject_xcorrs):
+            # SEM across ROIs for this subject
+            roi_curves = np.array(list(roi_xcorrs_all[sid].values()))  # (n_rois, Lags)
+            n_rois = roi_curves.shape[0]
+            sid_sem = np.nanstd(roi_curves, axis=0) / np.sqrt(n_rois) if n_rois > 1 else np.zeros_like(xcorr)
+
+            sid_peak_lag = lag_times[np.argmax(xcorr)]
+            ax_s.plot(lag_times, xcorr, color='purple', lw=2)
+            # ax_s.fill_between(lag_times, xcorr - sid_sem, xcorr + sid_sem, color='purple', alpha=0.2, edgecolor='none')
+            ax_s.axvline(0, color='black', alpha=0.3)
+            ax_s.axhline(0, color='black', alpha=0.3)
+            ax_s.axvline(sid_peak_lag, color='red', linestyle=':', label=f'Peak: {sid_peak_lag*1000:.1f}ms')
+            ax_s.set_title(cohort_data[sid]['subjectID'])
+            ax_s.set_xlabel('Time (s)\n<--- Green Leads | Red Leads --->')
+            ax_s.set_xlim([-1.0, 1.0])
+            ax_s.set_ylim([-0.1, 1.0])
+            ax_s.legend(frameon=False, fontsize=8)
+            sns.despine(ax=ax_s)
+
+        axes[0].set_ylabel('Correlation Coefficient')
+        plt.suptitle(f'Per-Subject Temporal Lag: {target_tt}', y=1.02)
+        plt.tight_layout()
+        plt.savefig(os.path.join(results_dir, f'CrossCorr_Final_PerSubject_{target_tt}.svg'), format='svg')
+        plt.show()
+
+        xcorr_data[target_tt] = {
+            'lag_times':      lag_times,
+            'g_zscore':       g_zscore_all,       # sid -> {roi -> (Trials, Time)}
+            'r_zscore':       r_zscore_all,       # sid -> {roi -> (Trials, Time)}
+            'trial_xcorrs':   trial_xcorrs_all,   # sid -> {roi -> (Trials, Lags)}
+            'roi_xcorrs':     roi_xcorrs_all,     # sid -> {roi -> (Lags,)}
+            'subject_xcorrs': subject_xcorrs,     # list of (Lags,), order matches subject_sids
+            'subject_sids':   subject_sids,
+            'real_mu':        real_mu,
+            'real_sem':       real_sem,
+            'peak_lag':       peak_lag,
+        }
+
+    return xcorr_data
 
 
 #%% calculate decay constant

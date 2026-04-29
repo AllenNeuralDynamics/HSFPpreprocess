@@ -9,7 +9,6 @@ import numpy as np
 import os
 import glob
 import matplotlib.pyplot as plt
-import numpy as np
 import seaborn as sns
 import scipy.stats as stats
 from scipy import signal
@@ -30,94 +29,25 @@ session_ids = [
 ]
 
 
+SessionDir = r'C:\output_data'
+
 SaveDir = r'C:\output_data\results\combined_20260422'
 # 1. Ensure the SaveDir exists before saving
 if not os.path.exists(SaveDir):
     os.makedirs(SaveDir)
 
-# 2. Storage for all reloaded data
-cohort_data = {}
 
-for session_id in session_ids:
-    session_path = os.path.join(r'C:\output_data', session_id, 'fib')
-    print(f"Searching in: {session_path}")
 
-    # Search for any .h5 file
-    h5_files = glob.glob(os.path.join(session_path, "*.h5"))
-    
-    if not h5_files:
-        if os.path.exists(session_path):
-            print(f"Folder exists, but no .h5 found. Folder contains: {os.listdir(session_path)}")
-        else:
-            print(f"Error: The directory path does not exist: {session_path}")
-        continue # This is correct here, as we can't load what isn't there
-    
-    # 3. If we found a file, proceed to load it
-    target_file = h5_files[0]
-    print(f"Found file: {os.path.basename(target_file)}")
-    
-    try:
-        # Note: Ensure the function name matches (load_fip_h5 vs load_fip_hdf5)
-        loaded_vars = fipf_p.load_fip_h5(target_file)
-        
-        # Store the results
-        cohort_data[session_id] = {
-            'psth_data': loaded_vars[0],
-            'psth_pooled': loaded_vars[1],
-            'rt_data': loaded_vars[2],
-            'peak_results': loaded_vars[3],
-            'TSdict': loaded_vars[4],
-            'TSdict_rew': loaded_vars[5],
-            'Roi2Vis': loaded_vars[6],
-            'fs': loaded_vars[7],
-            'preW': loaded_vars[8],
-            'subjectID': loaded_vars[9],
-            'StimPeriod': loaded_vars[10]
-        }
-    except Exception as e:
-        print(f"Failed to load {session_id}: {e}")
 
-print(f"\nCohort Loading Complete. Total animals loaded: {len(cohort_data)}")
+
+# Combine sessions into a single group (cohort_data)
+cohort_data = fipf_p.load_cohort(session_ids, SessionDir)
+
+
 
 #%% Average trials within an animal and merge
-# 1. Aggregation: Create a summary dictionary for the cohort
-cohort_summary = {}
+cohort_summary = fipf_p.build_cohort_summary(cohort_data)
 
-for sid, data in cohort_data.items():
-    rois = data['Roi2Vis']  # e.g., [0, 2, 5]
-    psth_all = data['psth_data']
-    peaks_all = data['peak_results']
-    
-    #cohort_summary[sid] = {'G': {}, 'R': {}}
-    cohort_summary[sid] = {'G': {}, 'R': {}, 'C': {}}
-    
-    # Process each trial type found in the PSTH data
-    trial_types = [k.replace('G_', '').replace('_base', '') 
-                   for k in psth_all.keys() if k.startswith('G_')]
-
-    for tt in trial_types:
-        for sig in ['G', 'R', 'C']:
-            key = f"{sig}_{tt}_base"
-            if key in psth_all:
-                # psth_all[key] shape is (Time, ROIs, Trials)
-                # 1. Subset the ROIs of interest
-                roi_subset = psth_all[key][:, rois, :]
-                
-                # 2. Average across those ROIs to get (Time, Trials)
-                subject_psth = np.nanmean(roi_subset, axis=1)
-                
-                # 3. Aggregate Peak Magnitudes for those ROIs
-                peak_key = f"{key}_peak_mag"
-                if peak_key in peaks_all:
-                    # Average peak magnitude across ROIs for each trial
-                    subject_peaks = np.nanmean(peaks_all[peak_key][rois, :], axis=0)
-                else:
-                    subject_peaks = np.array([])
-
-                cohort_summary[sid][sig][tt] = {
-                    'psth': subject_psth, 
-                    'peaks': subject_peaks
-                }
                 
 #%% plot avgd ROIs for each animal, compare animals to each other 
 # 2. Plotting: Compare Green vs Red for a specific trial type across the cohort
@@ -162,7 +92,7 @@ plt.show()
 #%% plot combined animals (signal)
 
 # 1. Define Trial Types to export
-trial_types_to_plot = ['CS3R', 'CS3UR'] # Add any others you need
+trial_types_to_plot = ['CS3R'] # Add any others you need
 
 for target_tt in trial_types_to_plot:
     
@@ -297,60 +227,15 @@ fipf_p.plot_interleaved_chronological_heatmaps(cohort_summary, trial_types_to_pl
 
 
 #%% Plot trial-by-trial peak comparison
-print("\nRunning trial-by-trial correlation comparisons...")
-
-for target_tt in trial_types_to_plot:
-    all_trials_g_peaks = []
-    all_trials_r_peaks = []
-
-    for sid, data in cohort_data.items():
-        # 1. Gather Amplitude Coupling Data (Scatter Plot)
-        m_key_g = f"G_{target_tt}_base_peak_mag"
-        m_key_r = f"R_{target_tt}_base_peak_mag"
-        rois = data['Roi2Vis']
-        
-        if m_key_g in data['peak_results'] and m_key_r in data['peak_results']:
-            # Trial-by-trial peaks (averaged across ROIs)
-            g_matrix = data['peak_results'][m_key_g][rois, :]
-            r_matrix = data['peak_results'][m_key_r][rois, :]
-            
-            # Flatten trials from all ROIs into a 1D array (3 ROIs x 20 trials becomes a 60-element vector)
-            g_pts = g_matrix.flatten()
-            r_pts = r_matrix.flatten()
-            
-            # save the peak magnitude for green and red for each trial
-            all_trials_g_peaks.extend(g_pts)
-            all_trials_r_peaks.extend(r_pts)
-
-
-
-    # --- Plotting Panels ---
-    fig, ax1 = plt.subplots(figsize=(5, 5))
-
-    # Panel A: Amplitude Coupling
-    x, y = np.array(all_trials_r_peaks), np.array(all_trials_g_peaks)
-    mask = ~np.isnan(x) & ~np.isnan(y)
-    if len(x[mask]) > 1:
-        slope, intercept, r_val, p_val, _ = stats.linregress(x[mask], y[mask])
-        ax1.scatter(x[mask], y[mask], color='gray', alpha=0.3, s=15, edgecolors='none')
-        ax1.plot(x[mask], slope*x[mask] + intercept, color='red', label=f'R²={r_val**2:.3f}\n p={p_val}')
-        ax1.set_title(f'Amplitude Coupling ({target_tt})')
-        ax1.set_xlabel('Red Peak (% ∆F/F)'); ax1.set_ylabel('Green Peak (% ∆F/F)')
-        ax1.legend(frameon=False)
-
-
-    sns.despine()
-    plt.tight_layout()
-    
-    # Save results
-    peakcomp_path = os.path.join(SaveDir, f'Peak-Amplitude_Trial-by-Trial_{target_tt}.svg')
-    plt.savefig(peakcomp_path, format='svg', transparent=True)
-    plt.show()
-
-
-
+fipf_p.plot_trial_peak_comparison(cohort_data, trial_types_to_plot, SaveDir)
 
 #%% plot cross-correlation
+xcorr_data = fipf_p.plot_cross_correlation(cohort_summary, cohort_data, trial_types_to_plot, SaveDir)
+
+#%% plot cross-correlation for all trials
+xcorr_data_final = fipf_p.plot_cross_correlation_final(cohort_data, trial_types_to_plot, SaveDir)
+
+#%% plot cross-correlation with shuffled data control
 import random
 
 print("\n--- Running Temporal Lag with Shuffled Control ---")
@@ -512,3 +397,4 @@ for sid, data in cohort_data.items():
 # plt.plot(x, color = 'g')
 # plt.plot(y, color = 'r')
 # plt.show()
+

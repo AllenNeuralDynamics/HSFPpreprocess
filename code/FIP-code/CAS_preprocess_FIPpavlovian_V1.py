@@ -32,7 +32,7 @@ import h5py
 import FIPFunctions2 as fipf
 
 
-session_id = 'FIP_840205_2026-01-12_09-58-41'
+session_id = 'FIP_835527_2026-01-12_10-31-26'
 
 SaveDir = r'C:\output_data\results\results_' + session_id
 AnalDir = r'C:\output_data' + os.sep + session_id + os.sep + 'behavior'
