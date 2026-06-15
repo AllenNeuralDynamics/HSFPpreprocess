@@ -32,8 +32,7 @@ def load_session_paths(data_dir, session_id):
     calib_path = os.path.join(path, 'fib')
     return path, calib_path
 
-def load_calibration_metadata(calib_path):
-    """Load session_para
+
     
     
     
